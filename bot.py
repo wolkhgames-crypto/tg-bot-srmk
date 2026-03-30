@@ -422,6 +422,8 @@ async def scheduler(bot: Bot):
         now = datetime.now()
         current_time = now.strftime("%H:%M")
         
+        logging.info(f"Scheduler check: {current_time}")
+        
         # Проверяем всех пользователей и их настройки времени
         users = await get_all_users()
         
@@ -429,8 +431,11 @@ async def scheduler(bot: Bot):
             try:
                 settings = await get_user_settings(user_id)
                 
+                logging.info(f"User {user_id}: grades={settings['notify_grades']}, time={settings['grades_time']}, timetable={settings['notify_timetable']}, time={settings['timetable_time']}")
+                
                 # Проверяем время для расписания
                 if settings["notify_timetable"] and settings["timetable_time"] == current_time:
+                    logging.info(f"Sending timetable to {user_id}")
                     cookies = await get_cookies(user_id)
                     group_id = await get_group(user_id)
                     
@@ -445,6 +450,7 @@ async def scheduler(bot: Bot):
                 
                 # Проверяем время для оценок (кроме воскресенья)
                 if settings["notify_grades"] and settings["grades_time"] == current_time and now.weekday() != 6:
+                    logging.info(f"Sending grades to {user_id}")
                     cookies = await get_cookies(user_id)
                     
                     if cookies:

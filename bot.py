@@ -38,7 +38,10 @@ def main_keyboard():
             InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
             InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
         ],
-        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
+        [
+            InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
+            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
+        ],
         [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -185,6 +188,32 @@ async def show_stats(callback: CallbackQuery):
         reply_markup=main_keyboard()
     )
 
+@dp.callback_query(F.data == "change_group")
+async def change_group(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    current_group = await get_group(callback.from_user.id)
+    
+    if current_group:
+        # Находим название группы по ID
+        group_name = None
+        for name, gid in GROUPS.items():
+            if gid == current_group:
+                group_name = name
+                break
+        
+        await callback.message.edit_text(
+            f"Текущая группа: *{group_name or 'не найдена'}*\n\n"
+            "Введи новую группу (например: П-22):",
+            parse_mode="Markdown"
+        )
+    else:
+        await callback.message.edit_text(
+            "Группа не указана.\n\n"
+            "Введи свою группу (например: П-21):"
+        )
+    
+    await state.set_state(AuthStates.waiting_group)
+
 @dp.callback_query(F.data == "timetable")
 async def show_timetable(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -230,10 +259,12 @@ async def show_help(callback: CallbackQuery):
         "ℹ️ *Помощь*\n\n"
         "🔹 *Текущий месяц* - оценки за этот месяц\n"
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
-        "🔹 *Статистика* - общая статистика\n"
+        "🔹 *Расписание* - расписание занятий\n"
+        "🔹 *Сменить группу* - изменить группу\n"
         "🔹 *Выйти* - сменить аккаунт\n\n"
-        "📬 *Ежедневная рассылка*\n"
-        "Каждый день в 7:00 по МСК (кроме воскресенья) бот автоматически присылает оценки за текущий месяц.",
+        "📬 *Автоматические рассылки*\n"
+        "• 00:01 - расписание на день\n"
+        "• 7:00 - оценки (кроме воскресенья)",
         parse_mode="Markdown",
         reply_markup=main_keyboard()
     )
@@ -267,12 +298,38 @@ async def send_daily_grades(bot: Bot):
         except Exception as e:
             logging.error(f"Ошибка отправки оценок пользователю {user_id}: {e}")
 
+async def send_daily_timetable(bot: Bot):
+    """Отправка расписания всем пользователям в 00:01"""
+    now = datetime.now()
+    users = await get_all_users()
+    
+    for user_id in users:
+        try:
+            cookies = await get_cookies(user_id)
+            group_id = await get_group(user_id)
+            
+            if cookies and group_id:
+                result = await fetch_timetable(cookies, group_id, now.year, now.month)
+                if result and "❌" not in result and "📭" not in result:
+                    await bot.send_message(
+                        user_id,
+                        f"🌙 *Расписание на сегодня*\n\n{result}",
+                        parse_mode="Markdown"
+                    )
+        except Exception as e:
+            logging.error(f"Ошибка отправки расписания пользователю {user_id}: {e}")
+
 async def scheduler(bot: Bot):
     """Планировщик ежедневной рассылки"""
     while True:
         now = datetime.now()
-        # Отправляем в 7:00 каждый день, кроме воскресенья (weekday 6)
-        if now.hour == 7 and now.minute == 0 and now.weekday() != 6:
+        
+        # Отправляем расписание в 00:01 каждый день
+        if now.hour == 0 and now.minute == 1:
+            await send_daily_timetable(bot)
+            await asyncio.sleep(60)  # Ждём минуту, чтобы не отправить дважды
+        # Отправляем оценки в 7:00 каждый день, кроме воскресенья (weekday 6)
+        elif now.hour == 7 and now.minute == 0 and now.weekday() != 6:
             await send_daily_grades(bot)
             await asyncio.sleep(60)  # Ждём минуту, чтобы не отправить дважды
         else:

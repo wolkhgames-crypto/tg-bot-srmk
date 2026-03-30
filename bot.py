@@ -367,10 +367,14 @@ async def process_grades_time(message: Message, state: FSMContext):
     # Проверка формата времени
     import re
     if re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str):
-        await update_user_settings(message.from_user.id, grades_time=time_str)
+        # Нормализуем формат времени (добавляем ведущий ноль)
+        parts = time_str.split(':')
+        normalized_time = f"{int(parts[0]):02d}:{parts[1]}"
+        
+        await update_user_settings(message.from_user.id, grades_time=normalized_time)
         await state.clear()
         await message.answer(
-            f"✅ Время рассылки оценок установлено: {time_str}",
+            f"✅ Время рассылки оценок установлено: {normalized_time}",
             reply_markup=main_keyboard()
         )
     else:
@@ -386,10 +390,14 @@ async def process_timetable_time(message: Message, state: FSMContext):
     # Проверка формата времени
     import re
     if re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str):
-        await update_user_settings(message.from_user.id, timetable_time=time_str)
+        # Нормализуем формат времени (добавляем ведущий ноль)
+        parts = time_str.split(':')
+        normalized_time = f"{int(parts[0]):02d}:{parts[1]}"
+        
+        await update_user_settings(message.from_user.id, timetable_time=normalized_time)
         await state.clear()
         await message.answer(
-            f"✅ Время рассылки расписания установлено: {time_str}",
+            f"✅ Время рассылки расписания установлено: {normalized_time}",
             reply_markup=main_keyboard()
         )
     else:

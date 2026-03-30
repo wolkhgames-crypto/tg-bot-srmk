@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 import aiohttp
 import os
 
-from db import init_db, save_cookies, get_cookies, delete_cookies
-from scraper import login, fetch_grades
+from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group
+from scraper import login, fetch_grades, fetch_timetable
 
 load_dotenv()
 
@@ -24,6 +24,7 @@ dp = Dispatcher(storage=MemoryStorage())
 class AuthStates(StatesGroup):
     waiting_login = State()
     waiting_password = State()
+    waiting_group = State()
 
 def main_keyboard():
     buttons = [
@@ -33,9 +34,10 @@ def main_keyboard():
             InlineKeyboardButton(text="➡️ Вперёд", callback_data="grades_next"),
         ],
         [
+            InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
             InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
-            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
         ],
+        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
         [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -80,15 +82,16 @@ async def process_password(message: Message, state: FSMContext):
     
     try:
         cookies = await login(data["username"], message.text)
-        await state.clear()
         
         if cookies:
             await save_cookies(message.from_user.id, cookies)
             await wait_msg.edit_text(
-                "✅ Успешно! Выбери действие:",
-                reply_markup=main_keyboard()
+                "✅ Успешно!\n\n"
+                "Теперь укажи свою группу (например: П-21):"
             )
+            await state.set_state(AuthStates.waiting_group)
         else:
+            await state.clear()
             await wait_msg.edit_text(
                 "❌ Неверный логин или пароль.\n"
                 "Попробуй снова — /start"
@@ -99,6 +102,33 @@ async def process_password(message: Message, state: FSMContext):
             "Попробуй позже — /start"
         )
         await state.clear()
+
+@dp.message(AuthStates.waiting_group)
+async def process_group(message: Message, state: FSMContext):
+    group_name = message.text.strip().upper()
+    
+    # Словарь групп и их ID (нужно будет дополнить)
+    groups = {
+        "П-21": "238",
+        "П-22": "239",
+        # Добавить остальные группы
+    }
+    
+    group_id = groups.get(group_name)
+    
+    if group_id:
+        await save_group(message.from_user.id, group_id)
+        await state.clear()
+        await message.answer(
+            f"✅ Группа {group_name} сохранена!\n\n"
+            "Выбери действие:",
+            reply_markup=main_keyboard()
+        )
+    else:
+        await message.answer(
+            f"❌ Группа {group_name} не найдена.\n\n"
+            "Попробуй ещё раз (например: П-21):"
+        )
 
 async def send_grades(callback: CallbackQuery, year: int, month: int):
     await callback.answer()
@@ -162,6 +192,45 @@ async def show_stats(callback: CallbackQuery):
         reply_markup=main_keyboard()
     )
 
+@dp.callback_query(F.data == "timetable")
+async def show_timetable(callback: CallbackQuery):
+    await callback.answer()
+    
+    group_id = await get_group(callback.from_user.id)
+    if not group_id:
+        await callback.message.edit_text(
+            "❌ Группа не указана.\n\n"
+            "Для просмотра расписания нужно указать группу.\n"
+            "Напиши группу (например: П-21)",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard()
+        )
+        return
+    
+    msg = await callback.message.edit_text("⏳ Загружаю расписание...")
+    
+    try:
+        cookies = await get_cookies(callback.from_user.id)
+        if not cookies:
+            await msg.edit_text("❌ Сессия истекла. Войди снова — /start")
+            return
+        
+        now = datetime.now()
+        result = await fetch_timetable(cookies, group_id, now.year, now.month)
+        
+        if result is None:
+            await delete_cookies(callback.from_user.id)
+            await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
+            return
+        
+        await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+    except Exception as e:
+        await msg.edit_text(
+            "❌ Произошла ошибка при загрузке расписания.\n"
+            "Попробуй позже.",
+            reply_markup=main_keyboard()
+        )
+
 @dp.callback_query(F.data == "help")
 async def show_help(callback: CallbackQuery):
     await callback.answer()
@@ -171,11 +240,8 @@ async def show_help(callback: CallbackQuery):
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Статистика* - общая статистика\n"
         "🔹 *Выйти* - сменить аккаунт\n\n"
-        "*Обозначения оценок:*\n"
-        "🟢 5 - отлично\n"
-        "🟡 4 - хорошо\n"
-        "🟠 3 - удовлетворительно\n"
-        "🔴 2 - неудовлетворительно",
+        "📬 *Ежедневная рассылка*\n"
+        "Каждый день в 7:00 по МСК (кроме воскресенья) бот автоматически присылает оценки за текущий месяц.",
         parse_mode="Markdown",
         reply_markup=main_keyboard()
     )
@@ -190,11 +256,44 @@ async def logout(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(AuthStates.waiting_login)
 
+async def send_daily_grades(bot: Bot):
+    """Отправка оценок всем пользователям"""
+    now = datetime.now()
+    users = await get_all_users()
+    
+    for user_id in users:
+        try:
+            cookies = await get_cookies(user_id)
+            if cookies:
+                result = await fetch_grades(cookies, now.year, now.month)
+                if result and "❌" not in result:
+                    await bot.send_message(
+                        user_id,
+                        f"📅 *Ежедневная сводка оценок*\n\n{result}",
+                        parse_mode="Markdown"
+                    )
+        except Exception as e:
+            logging.error(f"Ошибка отправки оценок пользователю {user_id}: {e}")
+
+async def scheduler(bot: Bot):
+    """Планировщик ежедневной рассылки"""
+    while True:
+        now = datetime.now()
+        # Отправляем в 7:00 каждый день, кроме воскресенья (weekday 6)
+        if now.hour == 7 and now.minute == 0 and now.weekday() != 6:
+            await send_daily_grades(bot)
+            await asyncio.sleep(60)  # Ждём минуту, чтобы не отправить дважды
+        else:
+            await asyncio.sleep(30)  # Проверяем каждые 30 секунд
+
 async def main():
     await init_db()
     logging.basicConfig(level=logging.INFO)
     
     bot = Bot(token=os.getenv("BOT_TOKEN"))
+    
+    # Запускаем планировщик в фоне
+    asyncio.create_task(scheduler(bot))
     
     try:
         await dp.start_polling(bot)

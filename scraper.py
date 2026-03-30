@@ -5,6 +5,7 @@ from datetime import datetime
 BASE = "https://rmk.stavedu.ru:8010/moodle"
 LOGIN_URL = "https://rmk.stavedu.ru:8010/moodle/login/index.php"
 DIARY_URL = "https://rmk.stavedu.ru:8010/moodle/eioswork/diaries/studentsdiary.php"
+TIMETABLE_URL = "https://rmk.stavedu.ru:8010/moodle/eioswork/timetable/watchstudent.php"
 
 async def get_login_token(session: aiohttp.ClientSession) -> str:
     """Moodle требует logintoken с формы"""
@@ -167,3 +168,56 @@ def parse_grades(html: str, year: int, month: int) -> str:
         result.append(f"📝 *Всего оценок:* `{total_grades}`")
     
     return "\n".join(result) if len(result) > 1 else "📭 Оценок за этот месяц нет"
+
+async def fetch_timetable(cookies: dict, group_id: str, year: int = None, month: int = None) -> str | None:
+    """Получает и парсит расписание для группы"""
+    if year is None:
+        year = datetime.now().year
+    if month is None:
+        month = datetime.now().month
+
+    url = f"{TIMETABLE_URL}?year={year}&month={month}&group={group_id}"
+    
+    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+    connector = aiohttp.TCPConnector(ssl=False, force_close=True)
+
+    try:
+        async with aiohttp.ClientSession(connector=connector, cookies=cookies, timeout=timeout) as session:
+            async with session.get(url) as resp:
+                final_url = str(resp.url)
+                html = await resp.text()
+
+                if "login" in final_url or "403" in html:
+                    return None
+
+        return parse_timetable(html)
+    except Exception as e:
+        return "❌ Сервер недоступен. Попробуй позже."
+
+def parse_timetable(html: str) -> str:
+    """Парсит расписание из HTML"""
+    soup = BeautifulSoup(html, "html.parser")
+    
+    # Ищем таблицу с расписанием
+    table = soup.find("table")
+    if not table:
+        return "❌ Расписание не найдено"
+    
+    result = []
+    result.append("📅 *Расписание занятий*\n")
+    
+    # Парсим расписание (структура зависит от HTML)
+    # Это базовая версия, нужно будет доработать под реальную структуру
+    rows = table.find_all("tr")
+    
+    current_day = None
+    for row in rows:
+        cells = row.find_all("td")
+        if not cells:
+            continue
+        
+        # Здесь нужна логика парсинга в зависимости от структуры HTML
+        # Пока возвращаем заглушку
+        
+    result.append("_Функция в разработке..._")
+    return "\n".join(result)

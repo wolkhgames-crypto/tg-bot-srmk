@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command, ChatTypeFilter
+from aiogram.filters import Command
 from aiogram.enums import ChatType
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -40,8 +40,13 @@ def main_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-@dp.message(Command("start"), ChatTypeFilter(ChatType.PRIVATE))
+@dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
+    # Проверка на личный чат
+    if message.chat.type != ChatType.PRIVATE:
+        await message.answer("❌ Бот работает только в личных сообщениях. Напиши мне в личку: @john_srmk_bot")
+        return
+    
     cookies = await get_cookies(message.from_user.id)
     if cookies:
         await message.answer(
@@ -55,7 +60,7 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         await state.set_state(AuthStates.waiting_login)
 
-@dp.message(ChatTypeFilter(ChatType.GROUP, ChatType.SUPERGROUP))
+@dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def block_groups(message: Message):
     await message.answer("❌ Бот работает только в личных сообщениях. Напиши мне в личку: @john_srmk_bot")
 

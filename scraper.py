@@ -187,14 +187,16 @@ async def get_all_groups(cookies: dict) -> dict:
         links = soup.find_all("a", href=True)
         for link in links:
             href = link.get("href", "")
+            # Проверяем, что это ссылка на расписание группы
             if "watchstudent.php" in href and "group=" in href:
                 # Извлекаем ID группы из URL
                 import re
+                # Ищем group=XXX в URL (учитываем &amp; и &)
                 match = re.search(r'group=(\d+)', href)
                 if match:
                     group_id = match.group(1)
-                    group_name = link.get_text(strip=True)
-                    if group_name:
+                    group_name = link.get_text(strip=True).upper()
+                    if group_name and len(group_name) <= 10:  # Фильтруем только короткие названия групп
                         groups[group_name] = group_id
         
         return groups

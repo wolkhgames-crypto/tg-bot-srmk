@@ -82,13 +82,13 @@ def format_grade(grade: str) -> str:
     try:
         grade_num = int(grade)
         if grade_num == 5:
-            return f"🟢 {grade}"
+            return "🟢5"
         elif grade_num == 4:
-            return f"🟡 {grade}"
+            return "🟡4"
         elif grade_num == 3:
-            return f"🟠 {grade}"
+            return "🟠3"
         elif grade_num <= 2:
-            return f"🔴 {grade}"
+            return "🔴2"
     except ValueError:
         pass
     return grade
@@ -138,16 +138,19 @@ def parse_grades(html: str, year: int, month: int) -> str:
             if b:
                 text = b.get_text(strip=True)
                 if text:
-                    formatted = format_grade(text)
-                    grades.append(formatted)
-                    try:
-                        grade_sum += int(text)
-                        total_grades += 1
-                    except ValueError:
-                        pass
+                    # Разбиваем строку на отдельные оценки (каждый символ - оценка)
+                    for char in text:
+                        if char.isdigit():
+                            formatted = format_grade(char)
+                            grades.append(formatted)
+                            try:
+                                grade_sum += int(char)
+                                total_grades += 1
+                            except ValueError:
+                                pass
         
         if grades:
-            result.append(f"📚 *{subject}*\n   {' '.join(grades)}\n")
+            result.append(f"📚 *{subject}*\n   {'|'.join(grades)}\n")
     
     # Добавляем статистику
     if total_grades > 0:

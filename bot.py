@@ -15,7 +15,7 @@ import aiohttp
 import os
 
 from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group
-from scraper import login, fetch_grades, fetch_timetable
+from scraper import login, fetch_grades, fetch_timetable, get_all_groups
 
 load_dotenv()
 
@@ -107,25 +107,29 @@ async def process_password(message: Message, state: FSMContext):
 async def process_group(message: Message, state: FSMContext):
     group_name = message.text.strip().upper()
     
-    # Словарь групп и их ID (нужно будет дополнить)
-    groups = {
-        "П-21": "238",
-        "П-22": "239",
-        # Добавить остальные группы
-    }
+    wait_msg = await message.answer("⏳ Ищу группу...")
+    
+    # Получаем список всех групп
+    cookies = await get_cookies(message.from_user.id)
+    if not cookies:
+        await wait_msg.edit_text("❌ Сессия истекла. Войди снова — /start")
+        await state.clear()
+        return
+    
+    groups = await get_all_groups(cookies)
     
     group_id = groups.get(group_name)
     
     if group_id:
         await save_group(message.from_user.id, group_id)
         await state.clear()
-        await message.answer(
+        await wait_msg.edit_text(
             f"✅ Группа {group_name} сохранена!\n\n"
             "Выбери действие:",
             reply_markup=main_keyboard()
         )
     else:
-        await message.answer(
+        await wait_msg.edit_text(
             f"❌ Группа {group_name} не найдена.\n\n"
             "Попробуй ещё раз (например: П-21):"
         )

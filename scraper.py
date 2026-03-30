@@ -6,6 +6,7 @@ BASE = "https://rmk.stavedu.ru:8010/moodle"
 LOGIN_URL = "https://rmk.stavedu.ru:8010/moodle/login/index.php"
 DIARY_URL = "https://rmk.stavedu.ru:8010/moodle/eioswork/diaries/studentsdiary.php"
 TIMETABLE_URL = "https://rmk.stavedu.ru:8010/moodle/eioswork/timetable/watchstudent.php"
+TIMETABLE_INDEX_URL = "https://rmk.stavedu.ru:8010/moodle/eioswork/timetable/index.php"
 
 async def get_login_token(session: aiohttp.ClientSession) -> str:
     """Moodle требует logintoken с формы"""
@@ -168,6 +169,37 @@ def parse_grades(html: str, year: int, month: int) -> str:
         result.append(f"📝 *Всего оценок:* `{total_grades}`")
     
     return "\n".join(result) if len(result) > 1 else "📭 Оценок за этот месяц нет"
+
+async def get_all_groups(cookies: dict) -> dict:
+    """Получает список всех групп и их ID"""
+    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+    connector = aiohttp.TCPConnector(ssl=False, force_close=True)
+
+    try:
+        async with aiohttp.ClientSession(connector=connector, cookies=cookies, timeout=timeout) as session:
+            async with session.get(TIMETABLE_INDEX_URL) as resp:
+                html = await resp.text()
+        
+        soup = BeautifulSoup(html, "html.parser")
+        groups = {}
+        
+        # Ищем все ссылки на группы
+        links = soup.find_all("a", href=True)
+        for link in links:
+            href = link.get("href", "")
+            if "watchstudent.php" in href and "group=" in href:
+                # Извлекаем ID группы из URL
+                import re
+                match = re.search(r'group=(\d+)', href)
+                if match:
+                    group_id = match.group(1)
+                    group_name = link.get_text(strip=True)
+                    if group_name:
+                        groups[group_name] = group_id
+        
+        return groups
+    except Exception as e:
+        return {}
 
 async def fetch_timetable(cookies: dict, group_id: str, year: int = None, month: int = None) -> str | None:
     """Получает и парсит расписание для группы"""

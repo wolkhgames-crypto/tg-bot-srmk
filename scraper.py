@@ -118,6 +118,7 @@ def parse_grades(html: str, year: int, month: int) -> str:
         # Оценки без смайликов
         grades = []
         attestation = None
+        first_item_processed = False
         
         for cell in cells[1:]:
             b = cell.find("b")
@@ -125,25 +126,30 @@ def parse_grades(html: str, year: int, month: int) -> str:
                 text = b.get_text(strip=True)
                 if text:
                     # Разбиваем строку на отдельные символы
-                    for idx, char in enumerate(text):
-                        if char.isdigit():
-                            # Первая оценка - аттестация
-                            if idx == 0 and attestation is None:
+                    for char in text:
+                        if not first_item_processed:
+                            # Первый элемент - аттестация
+                            if char.isdigit():
                                 attestation = char
                                 try:
                                     grade_sum += int(char)
                                     total_grades += 1
                                 except ValueError:
                                     pass
-                            else:
+                            elif char.lower() == 'н':
+                                attestation = 'н/а'
+                            first_item_processed = True
+                        else:
+                            # Остальные - обычные оценки
+                            if char.isdigit():
                                 grades.append(char)
                                 try:
                                     grade_sum += int(char)
                                     total_grades += 1
                                 except ValueError:
                                     pass
-                        elif char.lower() == 'н':
-                            grades.append('н')
+                            elif char.lower() == 'н':
+                                grades.append('н')
         
         if attestation or grades:
             subject_line = f"📚 *{subject}*\n"

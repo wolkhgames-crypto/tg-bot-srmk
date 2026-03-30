@@ -15,7 +15,8 @@ import aiohttp
 import os
 
 from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group
-from scraper import login, fetch_grades, fetch_timetable, get_all_groups
+from scraper import login, fetch_grades, fetch_timetable
+from groups import GROUPS
 
 load_dotenv()
 
@@ -82,16 +83,15 @@ async def process_password(message: Message, state: FSMContext):
     
     try:
         cookies = await login(data["username"], message.text)
+        await state.clear()
         
         if cookies:
             await save_cookies(message.from_user.id, cookies)
             await wait_msg.edit_text(
-                "✅ Успешно!\n\n"
-                "Теперь укажи свою группу (например: П-21):"
+                "✅ Успешно! Выбери действие:",
+                reply_markup=main_keyboard()
             )
-            await state.set_state(AuthStates.waiting_group)
         else:
-            await state.clear()
             await wait_msg.edit_text(
                 "❌ Неверный логин или пароль.\n"
                 "Попробуй снова — /start"
@@ -107,29 +107,18 @@ async def process_password(message: Message, state: FSMContext):
 async def process_group(message: Message, state: FSMContext):
     group_name = message.text.strip().upper()
     
-    wait_msg = await message.answer("⏳ Ищу группу...")
-    
-    # Получаем список всех групп
-    cookies = await get_cookies(message.from_user.id)
-    if not cookies:
-        await wait_msg.edit_text("❌ Сессия истекла. Войди снова — /start")
-        await state.clear()
-        return
-    
-    groups = await get_all_groups(cookies)
-    
-    group_id = groups.get(group_name)
+    group_id = GROUPS.get(group_name)
     
     if group_id:
         await save_group(message.from_user.id, group_id)
         await state.clear()
-        await wait_msg.edit_text(
+        await message.answer(
             f"✅ Группа {group_name} сохранена!\n\n"
             "Выбери действие:",
             reply_markup=main_keyboard()
         )
     else:
-        await wait_msg.edit_text(
+        await message.answer(
             f"❌ Группа {group_name} не найдена.\n\n"
             "Попробуй ещё раз (например: П-21):"
         )
@@ -197,18 +186,17 @@ async def show_stats(callback: CallbackQuery):
     )
 
 @dp.callback_query(F.data == "timetable")
-async def show_timetable(callback: CallbackQuery):
+async def show_timetable(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     group_id = await get_group(callback.from_user.id)
     if not group_id:
         await callback.message.edit_text(
             "❌ Группа не указана.\n\n"
-            "Для просмотра расписания нужно указать группу.\n"
-            "Напиши группу (например: П-21)",
-            parse_mode="Markdown",
-            reply_markup=main_keyboard()
+            "Для просмотра расписания укажи свою группу (например: П-21):",
+            parse_mode="Markdown"
         )
+        await state.set_state(AuthStates.waiting_group)
         return
     
     msg = await callback.message.edit_text("⏳ Загружаю расписание...")

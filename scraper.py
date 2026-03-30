@@ -234,26 +234,95 @@ def parse_timetable(html: str) -> str:
     """Парсит расписание из HTML"""
     soup = BeautifulSoup(html, "html.parser")
     
-    # Ищем таблицу с расписанием
-    table = soup.find("table")
-    if not table:
+    # Ищем все таблицы с расписанием по дням
+    day_tables = soup.find_all("table", class_="daytable")
+    if not day_tables:
         return "❌ Расписание не найдено"
     
     result = []
     result.append("📅 *Расписание занятий*\n")
     
-    # Парсим расписание (структура зависит от HTML)
-    # Это базовая версия, нужно будет доработать под реальную структуру
-    rows = table.find_all("tr")
+    # Время пар
+    times = {
+        "1": "8:00 - 9:30",
+        "2": "9:40 - 11:10",
+        "3": "11:40 - 13:10",
+        "4": "13:20 - 14:50",
+        "5": "15:00 - 16:30",
+        "6": "16:50 - 18:20",
+        "7": "18:30 - 20:00"
+    }
     
-    current_day = None
-    for row in rows:
-        cells = row.find_all("td")
-        if not cells:
-            continue
+    for day_table in day_tables:
+        # Получаем день недели и дату
+        day_header = day_table.find("td", class_="thead")
+        if day_header:
+            day_text = day_header.get_text(strip=True)
+            result.append(f"\n*{day_text}:*")
         
-        # Здесь нужна логика парсинга в зависимости от структуры HTML
-        # Пока возвращаем заглушку
+        # Парсим пары
+        rows = day_table.find_all("tr")[1:]  # Пропускаем заголовок
         
-    result.append("_Функция в разработке..._")
-    return "\n".join(result)
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) < 2:
+                continue
+            
+            # Номер пары
+            pair_num = cells[0].get_text(strip=True)
+            
+            # Ищем информацию о паре
+            rowtable = cells[1].find("table", class_="rowtable")
+            if not rowtable:
+                continue
+            
+            pair_rows = rowtable.find_all("tr")
+            if not pair_rows:
+                continue
+            
+            # Проверяем, есть ли пара (не пустая)
+            first_row = pair_rows[0]
+            pair_cells = first_row.find_all("td")
+            if not pair_cells:
+                continue
+            
+            pair_info = pair_cells[0].get_text(strip=True)
+            
+            # Пропускаем пустые пары
+            if "—" in pair_info and pair_info.count("—") >= 2:
+                continue
+            
+            # Парсим информацию о паре
+            parts = pair_info.split("|")
+            if len(parts) >= 2:
+                subject = parts[0].strip()
+                teacher = parts[1].strip()
+                cabinet = pair_cells[1].get_text(strip=True) if len(pair_cells) > 1 else "—"
+                
+                # Проверяем подгруппы
+                if len(pair_rows) > 1:
+                    second_row = pair_rows[1]
+                    second_cells = second_row.find_all("td")
+                    if second_cells:
+                        second_info = second_cells[0].get_text(strip=True)
+                        if "—" not in second_info or second_info.count("—") < 2:
+                            # Есть подгруппы
+                            second_parts = second_info.split("|")
+                            if len(second_parts) >= 2:
+                                second_teacher = second_parts[1].strip()
+                                second_cabinet = second_cells[1].get_text(strip=True) if len(second_cells) > 1 else "—"
+                                
+                                result.append(f"{pair_num}) {subject}")
+                                result.append(f"├ Время: `{times.get(pair_num, '—')}`")
+                                result.append(f"└ Подгруппы:")
+                                result.append(f"    ├ 1️⃣ Преподаватель: {teacher} Кабинет: {cabinet}")
+                                result.append(f"    └ 2️⃣ Преподаватель: {second_teacher} Кабинет: {second_cabinet}")
+                                continue
+                
+                # Обычная пара без подгрупп
+                result.append(f"{pair_num}) {subject}")
+                result.append(f"├ Время: `{times.get(pair_num, '—')}`")
+                result.append(f"├ Преподаватель: {teacher}")
+                result.append(f"└ Кабинет: {cabinet}")
+    
+    return "\n".join(result) if len(result) > 1 else "📭 Расписание не найдено"

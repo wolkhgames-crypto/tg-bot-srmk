@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import aiohttp
 import os
 
-from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group
+from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group, get_user_settings, update_user_settings
 from scraper import login, fetch_grades, fetch_timetable
 from groups import GROUPS
 
@@ -40,8 +40,9 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
-            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
         ],
+        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
         [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -65,6 +66,24 @@ async def cmd_start(message: Message, state: FSMContext):
             parse_mode="Markdown"
         )
         await state.set_state(AuthStates.waiting_login)
+
+@dp.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.answer(
+        "ℹ️ *Помощь*\n\n"
+        "🔹 *Текущий месяц* - оценки за этот месяц\n"
+        "🔹 *Назад/Вперёд* - навигация по месяцам\n"
+        "🔹 *Расписание* - расписание занятий\n"
+        "🔹 *Сменить группу* - изменить группу\n"
+        "🔹 *Настройки* - управление рассылками\n"
+        "🔹 *Выйти* - сменить аккаунт\n\n"
+        "📬 *Автоматические рассылки*\n"
+        "• 00:01 - расписание на день\n"
+        "• 7:00 - оценки (кроме воскресенья)\n\n"
+        "Управляй рассылками в разделе ⚙️ Настройки",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard()
+    )
 
 @dp.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def block_groups(message: Message):
@@ -261,11 +280,69 @@ async def show_help(callback: CallbackQuery):
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Расписание* - расписание занятий\n"
         "🔹 *Сменить группу* - изменить группу\n"
+        "🔹 *Настройки* - управление рассылками\n"
         "🔹 *Выйти* - сменить аккаунт\n\n"
         "📬 *Автоматические рассылки*\n"
         "• 00:01 - расписание на день\n"
         "• 7:00 - оценки (кроме воскресенья)",
         parse_mode="Markdown",
+        reply_markup=main_keyboard()
+    )
+
+@dp.callback_query(F.data == "settings")
+async def show_settings(callback: CallbackQuery):
+    await callback.answer()
+    settings = await get_user_settings(callback.from_user.id)
+    
+    grades_status = "✅ Включено" if settings["notify_grades"] else "❌ Выключено"
+    timetable_status = "✅ Включено" if settings["notify_timetable"] else "❌ Выключено"
+    
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"Оценки: {grades_status}",
+            callback_data="toggle_grades"
+        )],
+        [InlineKeyboardButton(
+            text=f"Расписание: {timetable_status}",
+            callback_data="toggle_timetable"
+        )],
+        [InlineKeyboardButton(
+            text=f"⏰ Время оценок: {settings['grades_time']}",
+            callback_data="set_grades_time"
+        )],
+        [InlineKeyboardButton(
+            text=f"⏰ Время расписания: {settings['timetable_time']}",
+            callback_data="set_timetable_time"
+        )],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
+    ]
+    
+    await callback.message.edit_text(
+        "⚙️ *Настройки уведомлений*\n\n"
+        "Управляй автоматическими рассылками:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+@dp.callback_query(F.data == "toggle_grades")
+async def toggle_grades(callback: CallbackQuery):
+    settings = await get_user_settings(callback.from_user.id)
+    new_value = not settings["notify_grades"]
+    await update_user_settings(callback.from_user.id, notify_grades=new_value)
+    await show_settings(callback)
+
+@dp.callback_query(F.data == "toggle_timetable")
+async def toggle_timetable(callback: CallbackQuery):
+    settings = await get_user_settings(callback.from_user.id)
+    new_value = not settings["notify_timetable"]
+    await update_user_settings(callback.from_user.id, notify_timetable=new_value)
+    await show_settings(callback)
+
+@dp.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "Выбери действие:",
         reply_markup=main_keyboard()
     )
 
@@ -286,6 +363,10 @@ async def send_daily_grades(bot: Bot):
     
     for user_id in users:
         try:
+            settings = await get_user_settings(user_id)
+            if not settings["notify_grades"]:
+                continue
+            
             cookies = await get_cookies(user_id)
             if cookies:
                 result = await fetch_grades(cookies, now.year, now.month)
@@ -305,6 +386,10 @@ async def send_daily_timetable(bot: Bot):
     
     for user_id in users:
         try:
+            settings = await get_user_settings(user_id)
+            if not settings["notify_timetable"]:
+                continue
+            
             cookies = await get_cookies(user_id)
             group_id = await get_group(user_id)
             

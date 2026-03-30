@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -418,11 +418,13 @@ async def logout(callback: CallbackQuery, state: FSMContext):
 
 async def scheduler(bot: Bot):
     """Планировщик ежедневной рассылки"""
+    MSK = timezone(timedelta(hours=3))
+    
     while True:
-        now = datetime.now()
+        now = datetime.now(MSK)
         current_time = now.strftime("%H:%M")
         
-        logging.info(f"Scheduler check: {current_time}")
+        logging.info(f"Scheduler check (MSK): {current_time}")
         
         # Проверяем всех пользователей и их настройки времени
         users = await get_all_users()

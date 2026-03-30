@@ -26,6 +26,8 @@ class AuthStates(StatesGroup):
     waiting_login = State()
     waiting_password = State()
     waiting_group = State()
+    waiting_grades_time = State()
+    waiting_timetable_time = State()
 
 def main_keyboard():
     buttons = [
@@ -338,6 +340,64 @@ async def toggle_timetable(callback: CallbackQuery):
     await update_user_settings(callback.from_user.id, notify_timetable=new_value)
     await show_settings(callback)
 
+@dp.callback_query(F.data == "set_grades_time")
+async def set_grades_time(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "⏰ Введи время для рассылки оценок\n\n"
+        "Формат: ЧЧ:ММ (например: 08:00)\n"
+        "Текущее время по МСК"
+    )
+    await state.set_state(AuthStates.waiting_grades_time)
+
+@dp.callback_query(F.data == "set_timetable_time")
+async def set_timetable_time(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "⏰ Введи время для рассылки расписания\n\n"
+        "Формат: ЧЧ:ММ (например: 00:01)\n"
+        "Текущее время по МСК"
+    )
+    await state.set_state(AuthStates.waiting_timetable_time)
+
+@dp.message(AuthStates.waiting_grades_time)
+async def process_grades_time(message: Message, state: FSMContext):
+    time_str = message.text.strip()
+    
+    # Проверка формата времени
+    import re
+    if re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str):
+        await update_user_settings(message.from_user.id, grades_time=time_str)
+        await state.clear()
+        await message.answer(
+            f"✅ Время рассылки оценок установлено: {time_str}",
+            reply_markup=main_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Неверный формат времени.\n"
+            "Используй формат ЧЧ:ММ (например: 08:00)"
+        )
+
+@dp.message(AuthStates.waiting_timetable_time)
+async def process_timetable_time(message: Message, state: FSMContext):
+    time_str = message.text.strip()
+    
+    # Проверка формата времени
+    import re
+    if re.match(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$', time_str):
+        await update_user_settings(message.from_user.id, timetable_time=time_str)
+        await state.clear()
+        await message.answer(
+            f"✅ Время рассылки расписания установлено: {time_str}",
+            reply_markup=main_keyboard()
+        )
+    else:
+        await message.answer(
+            "❌ Неверный формат времени.\n"
+            "Используй формат ЧЧ:ММ (например: 00:01)"
+        )
+
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
@@ -356,69 +416,49 @@ async def logout(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(AuthStates.waiting_login)
 
-async def send_daily_grades(bot: Bot):
-    """Отправка оценок всем пользователям"""
-    now = datetime.now()
-    users = await get_all_users()
-    
-    for user_id in users:
-        try:
-            settings = await get_user_settings(user_id)
-            if not settings["notify_grades"]:
-                continue
-            
-            cookies = await get_cookies(user_id)
-            if cookies:
-                result = await fetch_grades(cookies, now.year, now.month)
-                if result and "❌" not in result:
-                    await bot.send_message(
-                        user_id,
-                        f"📅 *Ежедневная сводка оценок*\n\n{result}",
-                        parse_mode="Markdown"
-                    )
-        except Exception as e:
-            logging.error(f"Ошибка отправки оценок пользователю {user_id}: {e}")
-
-async def send_daily_timetable(bot: Bot):
-    """Отправка расписания всем пользователям в 00:01"""
-    now = datetime.now()
-    users = await get_all_users()
-    
-    for user_id in users:
-        try:
-            settings = await get_user_settings(user_id)
-            if not settings["notify_timetable"]:
-                continue
-            
-            cookies = await get_cookies(user_id)
-            group_id = await get_group(user_id)
-            
-            if cookies and group_id:
-                result = await fetch_timetable(cookies, group_id, now.year, now.month)
-                if result and "❌" not in result and "📭" not in result:
-                    await bot.send_message(
-                        user_id,
-                        f"🌙 *Расписание на сегодня*\n\n{result}",
-                        parse_mode="Markdown"
-                    )
-        except Exception as e:
-            logging.error(f"Ошибка отправки расписания пользователю {user_id}: {e}")
-
 async def scheduler(bot: Bot):
     """Планировщик ежедневной рассылки"""
     while True:
         now = datetime.now()
+        current_time = now.strftime("%H:%M")
         
-        # Отправляем расписание в 00:01 каждый день
-        if now.hour == 0 and now.minute == 1:
-            await send_daily_timetable(bot)
-            await asyncio.sleep(60)  # Ждём минуту, чтобы не отправить дважды
-        # Отправляем оценки в 7:00 каждый день, кроме воскресенья (weekday 6)
-        elif now.hour == 7 and now.minute == 0 and now.weekday() != 6:
-            await send_daily_grades(bot)
-            await asyncio.sleep(60)  # Ждём минуту, чтобы не отправить дважды
-        else:
-            await asyncio.sleep(30)  # Проверяем каждые 30 секунд
+        # Проверяем всех пользователей и их настройки времени
+        users = await get_all_users()
+        
+        for user_id in users:
+            try:
+                settings = await get_user_settings(user_id)
+                
+                # Проверяем время для расписания
+                if settings["notify_timetable"] and settings["timetable_time"] == current_time:
+                    cookies = await get_cookies(user_id)
+                    group_id = await get_group(user_id)
+                    
+                    if cookies and group_id:
+                        result = await fetch_timetable(cookies, group_id, now.year, now.month)
+                        if result and "❌" not in result and "📭" not in result:
+                            await bot.send_message(
+                                user_id,
+                                f"🌙 *Расписание на сегодня*\n\n{result}",
+                                parse_mode="Markdown"
+                            )
+                
+                # Проверяем время для оценок (кроме воскресенья)
+                if settings["notify_grades"] and settings["grades_time"] == current_time and now.weekday() != 6:
+                    cookies = await get_cookies(user_id)
+                    
+                    if cookies:
+                        result = await fetch_grades(cookies, now.year, now.month)
+                        if result and "❌" not in result:
+                            await bot.send_message(
+                                user_id,
+                                f"📅 *Ежедневная сводка оценок*\n\n{result}",
+                                parse_mode="Markdown"
+                            )
+            except Exception as e:
+                logging.error(f"Ошибка рассылки пользователю {user_id}: {e}")
+        
+        await asyncio.sleep(60)  # Проверяем каждую минуту
 
 async def main():
     await init_db()

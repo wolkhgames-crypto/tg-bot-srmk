@@ -25,14 +25,17 @@ class AuthStates(StatesGroup):
     waiting_password = State()
 
 def main_keyboard():
-    now = datetime.now()
     buttons = [
-        [InlineKeyboardButton(text="📊 Оценки за текущий месяц", callback_data="grades_current")],
+        [InlineKeyboardButton(text="📅 Текущий месяц", callback_data="grades_current")],
         [
-            InlineKeyboardButton(text="◀️ Прошлый месяц", callback_data="grades_prev"),
-            InlineKeyboardButton(text="▶️ Следующий месяц", callback_data="grades_next"),
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="grades_prev"),
+            InlineKeyboardButton(text="➡️ Вперёд", callback_data="grades_next"),
         ],
-        [InlineKeyboardButton(text="🔄 Сменить аккаунт", callback_data="logout")],
+        [
+            InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
+        ],
+        [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -65,41 +68,56 @@ async def process_password(message: Message, state: FSMContext):
     
     wait_msg = await message.answer("⏳ Авторизуюсь...")
     
-    cookies = await login(data["username"], message.text)
-    await state.clear()
-    
-    if cookies:
-        await save_cookies(message.from_user.id, cookies)
+    try:
+        cookies = await login(data["username"], message.text)
+        await state.clear()
+        
+        if cookies:
+            await save_cookies(message.from_user.id, cookies)
+            await wait_msg.edit_text(
+                "✅ Успешно! Выбери действие:",
+                reply_markup=main_keyboard()
+            )
+        else:
+            await wait_msg.edit_text(
+                "❌ Неверный логин или пароль.\n"
+                "Попробуй снова — /start"
+            )
+    except Exception as e:
         await wait_msg.edit_text(
-            "✅ Успешно! Выбери действие:",
-            reply_markup=main_keyboard()
+            "❌ Ошибка подключения к серверу.\n"
+            "Попробуй позже — /start"
         )
-    else:
-        await wait_msg.edit_text(
-            "❌ Неверный логин или пароль. Попробуй снова — /start"
-        )
+        await state.clear()
 
 async def send_grades(callback: CallbackQuery, year: int, month: int):
     await callback.answer()
     msg = await callback.message.edit_text("⏳ Загружаю оценки...")
     
-    cookies = await get_cookies(callback.from_user.id)
-    if not cookies:
-        await msg.edit_text("❌ Сессия истекла. Войди снова — /start")
-        return
-    
-    result = await fetch_grades(cookies, year, month)
-    
-    if result is None:
-        # Сессия протухла
-        await delete_cookies(callback.from_user.id)
-        await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
-        return
-    
-    if "❌ Сервер недоступен" in result:
-        await msg.edit_text(result, reply_markup=main_keyboard())
-    else:
-        await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+    try:
+        cookies = await get_cookies(callback.from_user.id)
+        if not cookies:
+            await msg.edit_text("❌ Сессия истекла. Войди снова — /start")
+            return
+        
+        result = await fetch_grades(cookies, year, month)
+        
+        if result is None:
+            # Сессия протухла
+            await delete_cookies(callback.from_user.id)
+            await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
+            return
+        
+        if "❌ Сервер недоступен" in result:
+            await msg.edit_text(result, reply_markup=main_keyboard())
+        else:
+            await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+    except Exception as e:
+        await msg.edit_text(
+            "❌ Произошла ошибка при загрузке оценок.\n"
+            "Попробуй позже.",
+            reply_markup=main_keyboard()
+        )
 
 @dp.callback_query(F.data == "grades_current")
 async def grades_current(callback: CallbackQuery):
@@ -119,6 +137,38 @@ async def grades_next(callback: CallbackQuery):
     month = now.month % 12 + 1
     year = now.year if now.month < 12 else now.year + 1
     await send_grades(callback, year, month)
+
+@dp.callback_query(F.data == "stats")
+async def show_stats(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "📊 *Статистика*\n\n"
+        "Эта функция покажет:\n"
+        "• Средний балл за семестр\n"
+        "• Количество оценок по предметам\n"
+        "• Динамику успеваемости\n\n"
+        "_Функция в разработке..._",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard()
+    )
+
+@dp.callback_query(F.data == "help")
+async def show_help(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "ℹ️ *Помощь*\n\n"
+        "🔹 *Текущий месяц* - оценки за этот месяц\n"
+        "🔹 *Назад/Вперёд* - навигация по месяцам\n"
+        "🔹 *Статистика* - общая статистика\n"
+        "🔹 *Выйти* - сменить аккаунт\n\n"
+        "*Обозначения оценок:*\n"
+        "🟢 5 - отлично\n"
+        "🟡 4 - хорошо\n"
+        "🟠 3 - удовлетворительно\n"
+        "🔴 2 - неудовлетворительно",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard()
+    )
 
 @dp.callback_query(F.data == "logout")
 async def logout(callback: CallbackQuery, state: FSMContext):

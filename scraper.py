@@ -183,21 +183,23 @@ async def get_all_groups(cookies: dict) -> dict:
         soup = BeautifulSoup(html, "html.parser")
         groups = {}
         
-        # Ищем все ссылки на группы
-        links = soup.find_all("a", href=True)
-        for link in links:
-            href = link.get("href", "")
-            # Проверяем, что это ссылка на расписание группы
-            if "watchstudent.php" in href and "group=" in href:
-                # Извлекаем ID группы из URL
-                import re
-                # Ищем group=XXX в URL (учитываем &amp; и &)
-                match = re.search(r'group=(\d+)', href)
-                if match:
-                    group_id = match.group(1)
-                    group_name = link.get_text(strip=True).upper()
-                    if group_name and len(group_name) <= 10:  # Фильтруем только короткие названия групп
-                        groups[group_name] = group_id
+        # Ищем все ссылки на группы в div с классом links-content
+        containers = soup.find_all("div", class_="links-content__container")
+        
+        for container in containers:
+            links = container.find_all("a", href=True)
+            for link in links:
+                href = link.get("href", "")
+                # Проверяем, что это ссылка на расписание группы
+                if "watchstudent.php" in href and "group=" in href:
+                    # Извлекаем ID группы из URL
+                    import re
+                    match = re.search(r'group=(\d+)', href)
+                    if match:
+                        group_id = match.group(1)
+                        group_name = link.get_text(strip=True).upper()
+                        if group_name:
+                            groups[group_name] = group_id
         
         return groups
     except Exception as e:

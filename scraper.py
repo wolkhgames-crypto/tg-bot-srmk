@@ -77,22 +77,6 @@ async def fetch_grades(cookies: dict, year: int = None, month: int = None) -> st
     except Exception as e:
         return "❌ Сервер недоступен. Попробуй позже."
 
-def format_grade(grade: str) -> str:
-    """Добавляет цветной индикатор к оценке"""
-    try:
-        grade_num = int(grade)
-        if grade_num == 5:
-            return "🟢5"
-        elif grade_num == 4:
-            return "🟡4"
-        elif grade_num == 3:
-            return "🟠3"
-        elif grade_num <= 2:
-            return "🔴2"
-    except ValueError:
-        pass
-    return grade
-
 def parse_grades(html: str, year: int, month: int) -> str:
     soup = BeautifulSoup(html, "html.parser")
     
@@ -131,26 +115,43 @@ def parse_grades(html: str, year: int, month: int) -> str:
         if not subject:
             continue
         
-        # Оценки с цветными индикаторами
+        # Оценки без смайликов
         grades = []
+        attestation = None
+        
         for cell in cells[1:]:
             b = cell.find("b")
             if b:
                 text = b.get_text(strip=True)
                 if text:
-                    # Разбиваем строку на отдельные оценки (каждый символ - оценка)
-                    for char in text:
+                    # Разбиваем строку на отдельные символы
+                    for idx, char in enumerate(text):
                         if char.isdigit():
-                            formatted = format_grade(char)
-                            grades.append(formatted)
-                            try:
-                                grade_sum += int(char)
-                                total_grades += 1
-                            except ValueError:
-                                pass
+                            # Первая оценка - аттестация
+                            if idx == 0 and attestation is None:
+                                attestation = char
+                                try:
+                                    grade_sum += int(char)
+                                    total_grades += 1
+                                except ValueError:
+                                    pass
+                            else:
+                                grades.append(char)
+                                try:
+                                    grade_sum += int(char)
+                                    total_grades += 1
+                                except ValueError:
+                                    pass
+                        elif char.lower() == 'н':
+                            grades.append('н')
         
-        if grades:
-            result.append(f"📚 *{subject}*\n   {'|'.join(grades)}\n")
+        if attestation or grades:
+            subject_line = f"📚 *{subject}*\n"
+            if attestation:
+                subject_line += f"   Аттестация: `{attestation}`\n"
+            if grades:
+                subject_line += f"   Оценки: `{'|'.join(grades)}`\n"
+            result.append(subject_line)
     
     # Добавляем статистику
     if total_grades > 0:

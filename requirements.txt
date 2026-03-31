@@ -3,4 +3,5 @@ aiohttp
 aiohttp-socks
 beautifulsoup4
 aiosqlite
+asyncpg
 python-dotenv

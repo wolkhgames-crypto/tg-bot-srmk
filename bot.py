@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
 from aiogram.enums import ChatType
 from aiogram.fsm.context import FSMContext
@@ -49,6 +49,14 @@ def main_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def reply_keyboard():
+    """Постоянная клавиатура внизу экрана"""
+    buttons = [
+        [KeyboardButton(text="📅 Оценки"), KeyboardButton(text="📋 Расписание")],
+        [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="ℹ️ Помощь")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     # Проверка на личный чат
@@ -60,6 +68,10 @@ async def cmd_start(message: Message, state: FSMContext):
     if cookies:
         await message.answer(
             "👋 Ты уже авторизован!\nВыбери действие:",
+            reply_markup=reply_keyboard()
+        )
+        await message.answer(
+            "Или используй меню:",
             reply_markup=main_keyboard()
         )
     else:
@@ -68,6 +80,105 @@ async def cmd_start(message: Message, state: FSMContext):
             parse_mode="Markdown"
         )
         await state.set_state(AuthStates.waiting_login)
+
+# Обработчики для постоянных кнопок
+@dp.message(F.text == "📅 Оценки")
+async def btn_grades(message: Message):
+    now = datetime.now()
+    cookies = await get_cookies(message.from_user.id)
+    if not cookies:
+        await message.answer("❌ Сессия истекла. Войди снова — /start")
+        return
+    
+    msg = await message.answer("⏳ Загружаю оценки...")
+    result = await fetch_grades(cookies, now.year, now.month)
+    
+    if result is None:
+        await delete_cookies(message.from_user.id)
+        await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
+        return
+    
+    await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+
+@dp.message(F.text == "📋 Расписание")
+async def btn_timetable(message: Message, state: FSMContext):
+    group_id = await get_group(message.from_user.id)
+    if not group_id:
+        await message.answer(
+            "❌ Группа не указана.\n\n"
+            "Для просмотра расписания укажи свою группу (например: П-21):",
+            parse_mode="Markdown"
+        )
+        await state.set_state(AuthStates.waiting_group)
+        return
+    
+    cookies = await get_cookies(message.from_user.id)
+    if not cookies:
+        await message.answer("❌ Сессия истекла. Войди снова — /start")
+        return
+    
+    msg = await message.answer("⏳ Загружаю расписание...")
+    now = datetime.now()
+    result = await fetch_timetable(cookies, group_id, now.year, now.month)
+    
+    if result is None:
+        await delete_cookies(message.from_user.id)
+        await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
+        return
+    
+    await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+
+@dp.message(F.text == "⚙️ Настройки")
+async def btn_settings(message: Message):
+    settings = await get_user_settings(message.from_user.id)
+    
+    grades_status = "✅ Включено" if settings["notify_grades"] else "❌ Выключено"
+    timetable_status = "✅ Включено" if settings["notify_timetable"] else "❌ Выключено"
+    
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"Оценки: {grades_status}",
+            callback_data="toggle_grades"
+        )],
+        [InlineKeyboardButton(
+            text=f"Расписание: {timetable_status}",
+            callback_data="toggle_timetable"
+        )],
+        [InlineKeyboardButton(
+            text=f"⏰ Время оценок: {settings['grades_time']}",
+            callback_data="set_grades_time"
+        )],
+        [InlineKeyboardButton(
+            text=f"⏰ Время расписания: {settings['timetable_time']}",
+            callback_data="set_timetable_time"
+        )],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
+    ]
+    
+    await message.answer(
+        "⚙️ *Настройки уведомлений*\n\n"
+        "Управляй автоматическими рассылками:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+@dp.message(F.text == "ℹ️ Помощь")
+async def btn_help(message: Message):
+    await message.answer(
+        "ℹ️ *Помощь*\n\n"
+        "🔹 *Текущий месяц* - оценки за этот месяц\n"
+        "🔹 *Назад/Вперёд* - навигация по месяцам\n"
+        "🔹 *Расписание* - расписание занятий\n"
+        "🔹 *Сменить группу* - изменить группу\n"
+        "🔹 *Настройки* - управление рассылками\n"
+        "🔹 *Выйти* - сменить аккаунт\n\n"
+        "📬 *Автоматические рассылки*\n"
+        "• 00:01 - расписание на день\n"
+        "• 7:00 - оценки (кроме воскресенья)\n\n"
+        "Управляй рассылками в разделе ⚙️ Настройки",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard()
+    )
 
 @dp.message(Command("help"))
 async def cmd_help(message: Message):

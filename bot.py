@@ -518,17 +518,17 @@ async def show_help(callback: CallbackQuery):
 async def show_support(callback: CallbackQuery):
     await callback.answer()
     await callback.message.edit_text(
-        "💬 *Поддержка*\n\n"
-        "👨‍💻 *Разработчики бота:*\n"
+        "💬 <b>Поддержка</b>\n\n"
+        "👨‍💻 <b>Разработчики бота:</b>\n"
         "• @k1laure\n"
         "• @avas_21\n\n"
-        "📝 *По всем вопросам:*\n"
+        "📝 <b>По всем вопросам:</b>\n"
         "• Ошибки в работе бота\n"
         "• Предложения по улучшению\n"
         "• Технические проблемы\n"
         "• Вопросы по использованию\n\n"
         "Напиши нам напрямую в Telegram!",
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=main_keyboard()
     )
 

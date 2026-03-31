@@ -41,13 +41,16 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
-            InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
+            InlineKeyboardButton(text="👁️ Поиск преподавателя", callback_data="search_teacher"),
         ],
         [
             InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
             InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
         ],
-        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
+        [
+            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
+            InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
+        ],
         [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -489,6 +492,7 @@ async def show_help(callback: CallbackQuery):
         "🔹 *Электронный дневник* - оценки за текущий месяц\n"
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Расписание* - расписание занятий\n"
+        "🔹 *Поиск преподавателя* - найти все пары преподавателя\n"
         "🔹 *Сменить группу* - изменить группу\n"
         "🔹 *Настройки* - управление рассылками\n"
         "🔹 *Выйти* - сменить аккаунт\n\n"
@@ -614,6 +618,17 @@ async def process_timetable_time(message: Message, state: FSMContext):
             "Используй формат ЧЧ:ММ (например: 00:01)"
         )
 
+@dp.callback_query(F.data == "search_teacher")
+async def search_teacher_handler(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "👁️ *Поиск преподавателя*\n\n"
+        "Введи фамилию преподавателя для поиска:\n"
+        "(например: Дудина)",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AuthStates.waiting_teacher_name)
+
 @dp.callback_query(F.data == "admin_search_teacher")
 async def admin_search_teacher(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -645,7 +660,7 @@ async def process_teacher_name(message: Message, state: FSMContext):
         await state.clear()
         
         buttons = [
-            [InlineKeyboardButton(text="◀️ Назад в админ-панель", callback_data="admin_back")]
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
         ]
         
         await msg.edit_text(
@@ -656,7 +671,7 @@ async def process_teacher_name(message: Message, state: FSMContext):
     except Exception as e:
         await state.clear()
         buttons = [
-            [InlineKeyboardButton(text="◀️ Назад в админ-панель", callback_data="admin_back")]
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
         ]
         await msg.edit_text(
             f"❌ Ошибка при поиске: {str(e)}",

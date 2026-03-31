@@ -28,6 +28,7 @@ class AuthStates(StatesGroup):
     waiting_group = State()
     waiting_grades_time = State()
     waiting_timetable_time = State()
+    waiting_admin_password = State()
 
 def main_keyboard():
     now = datetime.now()
@@ -39,7 +40,7 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
-            InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+            InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
         ],
         [
             InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
@@ -308,7 +309,7 @@ async def send_grades(callback: CallbackQuery, year: int, month: int):
             ],
             [
                 InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
-                InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+                InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
             ],
             [
                 InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
@@ -361,19 +362,53 @@ async def grades_next(callback: CallbackQuery):
     year = year if month != 1 else year + 1
     await send_grades(callback, year, month)
 
-@dp.callback_query(F.data == "stats")
-async def show_stats(callback: CallbackQuery):
+@dp.callback_query(F.data == "admin")
+async def show_admin(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.edit_text(
-        "📊 *Статистика*\n\n"
-        "Эта функция покажет:\n"
-        "• Средний балл за семестр\n"
-        "• Количество оценок по предметам\n"
-        "• Динамику успеваемости\n\n"
-        "_Функция в разработке..._",
-        parse_mode="Markdown",
-        reply_markup=main_keyboard()
+        "🔐 *Админ-панель*\n\n"
+        "Введи пароль для доступа:",
+        parse_mode="Markdown"
     )
+    await state.set_state(AuthStates.waiting_admin_password)
+
+@dp.message(AuthStates.waiting_admin_password)
+async def process_admin_password(message: Message, state: FSMContext):
+    await message.delete()  # Удаляем пароль из чата
+    
+    if message.text == "Wa9n8d77!!":
+        await state.clear()
+        
+        # Получаем статистику
+        users = await get_all_users()
+        total_users = len(users)
+        
+        # Получаем количество пользователей с активными уведомлениями
+        active_grades = 0
+        active_timetable = 0
+        
+        for user_id in users:
+            settings = await get_user_settings(user_id)
+            if settings["notify_grades"]:
+                active_grades += 1
+            if settings["notify_timetable"]:
+                active_timetable += 1
+        
+        await message.answer(
+            f"🔐 *Админ-панель*\n\n"
+            f"📊 *Статистика бота:*\n"
+            f"• Всего пользователей: {total_users}\n"
+            f"• Уведомления об оценках: {active_grades}\n"
+            f"• Уведомления о расписании: {active_timetable}",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard()
+        )
+    else:
+        await state.clear()
+        await message.answer(
+            "❌ Неверный пароль!",
+            reply_markup=main_keyboard()
+        )
 
 @dp.callback_query(F.data == "change_group")
 async def change_group(callback: CallbackQuery, state: FSMContext):

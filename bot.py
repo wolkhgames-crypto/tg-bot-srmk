@@ -29,6 +29,7 @@ class AuthStates(StatesGroup):
     waiting_grades_time = State()
     waiting_timetable_time = State()
     waiting_admin_password = State()
+    waiting_teacher_name = State()
 
 def main_keyboard():
     now = datetime.now()
@@ -394,6 +395,12 @@ async def process_admin_password(message: Message, state: FSMContext):
             if settings["notify_timetable"]:
                 active_timetable += 1
         
+        # Создаём кнопки админ-панели
+        buttons = [
+            [InlineKeyboardButton(text="👁️ Поиск преподавателя", callback_data="admin_search_teacher")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
+        ]
+        
         await message.answer(
             f"🔐 *Админ-панель*\n\n"
             f"📊 *Статистика бота:*\n"
@@ -401,7 +408,7 @@ async def process_admin_password(message: Message, state: FSMContext):
             f"• Уведомления об оценках: {active_grades}\n"
             f"• Уведомления о расписании: {active_timetable}",
             parse_mode="Markdown",
-            reply_markup=main_keyboard()
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
     else:
         await state.clear()
@@ -606,6 +613,89 @@ async def process_timetable_time(message: Message, state: FSMContext):
             "❌ Неверный формат времени.\n"
             "Используй формат ЧЧ:ММ (например: 00:01)"
         )
+
+@dp.callback_query(F.data == "admin_search_teacher")
+async def admin_search_teacher(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "👁️ *Поиск преподавателя*\n\n"
+        "Введи фамилию преподавателя для поиска:\n"
+        "(например: Дудина)",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AuthStates.waiting_teacher_name)
+
+@dp.message(AuthStates.waiting_teacher_name)
+async def process_teacher_name(message: Message, state: FSMContext):
+    await message.delete()  # Удаляем сообщение пользователя
+    teacher_name = message.text.strip()
+    
+    msg = await message.answer(f"⏳ Ищу преподавателя {teacher_name} во всех группах...\nЭто может занять 1-2 минуты.")
+    
+    try:
+        cookies = await get_cookies(message.from_user.id)
+        if not cookies:
+            await msg.edit_text("❌ Сессия истекла. Войди снова — /start")
+            await state.clear()
+            return
+        
+        # Здесь будет функция поиска преподавателя
+        # Пока заглушка
+        await state.clear()
+        
+        buttons = [
+            [InlineKeyboardButton(text="◀️ Назад в админ-панель", callback_data="admin_back")]
+        ]
+        
+        await msg.edit_text(
+            f"👁️ *Поиск преподавателя {teacher_name}*\n\n"
+            f"_Функция в разработке..._",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+    except Exception as e:
+        await state.clear()
+        buttons = [
+            [InlineKeyboardButton(text="◀️ Назад в админ-панель", callback_data="admin_back")]
+        ]
+        await msg.edit_text(
+            f"❌ Ошибка при поиске: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+
+@dp.callback_query(F.data == "admin_back")
+async def admin_back(callback: CallbackQuery):
+    await callback.answer()
+    
+    # Получаем статистику заново
+    users = await get_all_users()
+    total_users = len(users)
+    
+    active_grades = 0
+    active_timetable = 0
+    
+    for user_id in users:
+        settings = await get_user_settings(user_id)
+        if settings["notify_grades"]:
+            active_grades += 1
+        if settings["notify_timetable"]:
+            active_timetable += 1
+    
+    # Создаём кнопки админ-панели
+    buttons = [
+        [InlineKeyboardButton(text="👁️ Поиск преподавателя", callback_data="admin_search_teacher")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
+    ]
+    
+    await callback.message.edit_text(
+        f"🔐 *Админ-панель*\n\n"
+        f"📊 *Статистика бота:*\n"
+        f"• Всего пользователей: {total_users}\n"
+        f"• Уведомления об оценках: {active_grades}\n"
+        f"• Уведомления о расписании: {active_timetable}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
 
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):

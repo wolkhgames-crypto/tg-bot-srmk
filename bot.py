@@ -400,7 +400,7 @@ async def show_timetable(callback: CallbackQuery, state: FSMContext):
     
     group_id = await get_group(callback.from_user.id)
     if not group_id:
-        await callback.message.edit_text(
+        await callback.message.answer(
             "❌ Группа не указана.\n\n"
             "Для просмотра расписания укажи свою группу (например: П-21):",
             parse_mode="Markdown"
@@ -408,7 +408,7 @@ async def show_timetable(callback: CallbackQuery, state: FSMContext):
         await state.set_state(AuthStates.waiting_group)
         return
     
-    msg = await callback.message.edit_text("⏳ Загружаю расписание...")
+    msg = await callback.message.answer("⏳ Загружаю расписание...")
     
     try:
         cookies = await get_cookies(callback.from_user.id)

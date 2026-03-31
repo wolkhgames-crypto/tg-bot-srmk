@@ -65,8 +65,20 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer("❌ Бот работает только в личных сообщениях. Напиши мне в личку: @john_srmk_bot")
         return
     
+    # Проверяем, авторизован ли пользователь
+    cookies = await get_cookies(message.from_user.id)
+    if not cookies:
+        await message.answer(
+            "👋 Привет! Я бот для просмотра оценок и расписания СРМК.\n\n"
+            "Для начала работы нужно авторизоваться.\n\n"
+            "Введи свой *логин от электронного дневника*:",
+            parse_mode="Markdown"
+        )
+        await state.set_state(AuthStates.waiting_login)
+        return
+    
     await message.answer(
-        "👋 Привет! Я бот для просмотра оценок и расписания СРМК.\n\n"
+        "👋 Привет! Ты уже авторизован.\n\n"
         "Выбери действие:",
         reply_markup=reply_keyboard()
     )
@@ -76,12 +88,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def btn_grades(message: Message, state: FSMContext):
     cookies = await get_cookies(message.from_user.id)
     if not cookies:
-        await message.answer(
-            "Для просмотра оценок нужно авторизоваться.\n\n"
-            "Введи свой *логин* (email) от портала:",
-            parse_mode="Markdown"
-        )
-        await state.set_state(AuthStates.waiting_login)
+        await message.answer("❌ Сессия истекла. Войди снова — /start")
         return
     
     # Удаляем предыдущее сообщение с оценками

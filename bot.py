@@ -503,8 +503,8 @@ async def show_help(callback: CallbackQuery):
         "• 00:01 - расписание на день\n"
         "• 7:00 - оценки (кроме воскресенья)\n\n"
         "❓ *Возникли проблемы?*\n"
-        "Обратись в поддержку: @k1laure или @avas_21",
-        parse_mode="Markdown",
+        "Обратись в поддержку: @k1laure или @avas\\_21",
+        parse_mode="MarkdownV2",
         reply_markup=main_keyboard()
     )
 

@@ -326,3 +326,173 @@ def parse_timetable(html: str) -> str:
                 result.append(f"└ Кабинет: {cabinet}")
     
     return "\n".join(result) if len(result) > 1 else "📭 Расписание не найдено"
+
+async def search_teacher(cookies: dict, teacher_name: str) -> str:
+    """Ищет преподавателя во всех группах и возвращает его расписание"""
+    from groups import GROUPS
+    
+    result = []
+    result.append(f"🔍 *Поиск преподавателя: {teacher_name}*\n")
+    
+    found_count = 0
+    
+    # Проходим по всем группам
+    for group_name, group_id in GROUPS.items():
+        try:
+            # Получаем расписание группы
+            html = await fetch_timetable_html(cookies, group_id)
+            if not html:
+                continue
+            
+            # Парсим расписание и ищем преподавателя
+            soup = BeautifulSoup(html, "html.parser")
+            day_tables = soup.find_all("table", class_="daytable")
+            
+            if not day_tables:
+                continue
+            
+            # Время пар
+            times = {
+                "1": "8:00 - 9:30",
+                "2": "9:40 - 11:10",
+                "3": "11:40 - 13:10",
+                "4": "13:20 - 14:50",
+                "5": "15:00 - 16:30",
+                "6": "16:50 - 18:20",
+                "7": "18:30 - 20:00"
+            }
+            
+            group_schedule = []
+            
+            for day_table in day_tables:
+                # Получаем день недели
+                day_header = day_table.find("td", class_="thead")
+                if not day_header:
+                    continue
+                
+                day_text = day_header.get_text(strip=True)
+                
+                # Парсим пары
+                rows = day_table.find_all("tr")[1:]
+                
+                for row in rows:
+                    cells = row.find_all("td")
+                    if len(cells) < 2:
+                        continue
+                    
+                    pair_num = cells[0].get_text(strip=True)
+                    
+                    rowtable = cells[1].find("table", class_="rowtable")
+                    if not rowtable:
+                        continue
+                    
+                    pair_rows = rowtable.find_all("tr")
+                    if not pair_rows:
+                        continue
+                    
+                    # Проверяем первую подгруппу
+                    first_row = pair_rows[0]
+                    pair_cells = first_row.find_all("td")
+                    if not pair_cells:
+                        continue
+                    
+                    pair_info = pair_cells[0].get_text(strip=True)
+                    
+                    if "—" in pair_info and pair_info.count("—") >= 2:
+                        continue
+                    
+                    parts = pair_info.split("|")
+                    if len(parts) >= 2:
+                        subject = parts[0].strip()
+                        teacher = parts[1].strip()
+                        cabinet = pair_cells[1].get_text(strip=True) if len(pair_cells) > 1 else "—"
+                        
+                        # Проверяем, содержит ли имя преподавателя искомую фамилию
+                        if teacher_name.lower() in teacher.lower():
+                            group_schedule.append({
+                                'day': day_text,
+                                'pair_num': pair_num,
+                                'subject': subject,
+                                'teacher': teacher,
+                                'cabinet': cabinet,
+                                'subgroup': '1️⃣'
+                            })
+                        
+                        # Проверяем вторую подгруппу
+                        if len(pair_rows) > 1:
+                            second_row = pair_rows[1]
+                            second_cells = second_row.find_all("td")
+                            if second_cells:
+                                second_info = second_cells[0].get_text(strip=True)
+                                if "—" not in second_info or second_info.count("—") < 2:
+                                    second_parts = second_info.split("|")
+                                    if len(second_parts) >= 2:
+                                        second_teacher = second_parts[1].strip()
+                                        second_cabinet = second_cells[1].get_text(strip=True) if len(second_cells) > 1 else "—"
+                                        
+                                        if teacher_name.lower() in second_teacher.lower():
+                                            group_schedule.append({
+                                                'day': day_text,
+                                                'pair_num': pair_num,
+                                                'subject': subject,
+                                                'teacher': second_teacher,
+                                                'cabinet': second_cabinet,
+                                                'subgroup': '2️⃣'
+                                            })
+            
+            # Если нашли пары у этого преподавателя в группе
+            if group_schedule:
+                result.append(f"\n📚 *Группа {group_name}:*")
+                
+                current_day = None
+                for item in group_schedule:
+                    if item['day'] != current_day:
+                        result.append(f"\n*{item['day']}:*")
+                        current_day = item['day']
+                    
+                    result.append(f"{item['pair_num']}) {item['subject']}")
+                    result.append(f"├ Время: `{times.get(item['pair_num'], '—')}`")
+                    result.append(f"├ Преподаватель: {item['teacher']}")
+                    result.append(f"├ Кабинет: {item['cabinet']}")
+                    if 'subgroup' in item:
+                        result.append(f"└ Подгруппа: {item['subgroup']}")
+                    else:
+                        result.append(f"└ Вся группа")
+                
+                found_count += 1
+        
+        except Exception as e:
+            continue
+    
+    if found_count == 0:
+        return f"❌ Преподаватель *{teacher_name}* не найден в расписании"
+    
+    result.append(f"\n━━━━━━━━━━━━━━━━")
+    result.append(f"📊 *Найдено групп:* `{found_count}`")
+    
+    return "\n".join(result)
+
+async def fetch_timetable_html(cookies: dict, group_id: str, year: int = None, month: int = None) -> str | None:
+    """Получает HTML расписания для группы"""
+    if year is None:
+        year = datetime.now().year
+    if month is None:
+        month = datetime.now().month
+
+    url = f"{TIMETABLE_URL}?year={year}&month={month}&group={group_id}"
+    
+    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+    connector = aiohttp.TCPConnector(ssl=False, force_close=True)
+
+    try:
+        async with aiohttp.ClientSession(connector=connector, cookies=cookies, timeout=timeout) as session:
+            async with session.get(url) as resp:
+                final_url = str(resp.url)
+                html = await resp.text()
+
+                if "login" in final_url or "403" in html:
+                    return None
+
+        return html
+    except Exception as e:
+        return None

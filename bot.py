@@ -15,7 +15,7 @@ import aiohttp
 import os
 
 from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group, get_user_settings, update_user_settings, save_last_grades_message, get_last_grades_message
-from scraper import login, fetch_grades, fetch_timetable
+from scraper import login, fetch_grades, fetch_timetable, search_teacher
 from groups import GROUPS
 
 load_dotenv()
@@ -639,8 +639,9 @@ async def process_teacher_name(message: Message, state: FSMContext):
             await state.clear()
             return
         
-        # Здесь будет функция поиска преподавателя
-        # Пока заглушка
+        # Ищем преподавателя во всех группах
+        result = await search_teacher(cookies, teacher_name)
+        
         await state.clear()
         
         buttons = [
@@ -648,8 +649,7 @@ async def process_teacher_name(message: Message, state: FSMContext):
         ]
         
         await msg.edit_text(
-            f"👁️ *Поиск преподавателя {teacher_name}*\n\n"
-            f"_Функция в разработке..._",
+            result,
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )

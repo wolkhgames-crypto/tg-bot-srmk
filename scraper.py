@@ -331,10 +331,19 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
     """Ищет преподавателя во всех группах и возвращает его расписание"""
     from groups import GROUPS
     
-    result = []
-    result.append(f"🔍 *Поиск преподавателя: {teacher_name}*\n")
+    # Словарь для группировки по дням: {день: [пары]}
+    schedule_by_day = {}
     
-    found_count = 0
+    # Время пар
+    times = {
+        "1": "8:00-9:30",
+        "2": "9:40-11:10",
+        "3": "11:40-13:10",
+        "4": "13:20-14:50",
+        "5": "15:00-16:30",
+        "6": "16:50-18:20",
+        "7": "18:30-20:00"
+    }
     
     # Проходим по всем группам
     for group_name, group_id in GROUPS.items():
@@ -350,19 +359,6 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
             
             if not day_tables:
                 continue
-            
-            # Время пар
-            times = {
-                "1": "8:00 - 9:30",
-                "2": "9:40 - 11:10",
-                "3": "11:40 - 13:10",
-                "4": "13:20 - 14:50",
-                "5": "15:00 - 16:30",
-                "6": "16:50 - 18:20",
-                "7": "18:30 - 20:00"
-            }
-            
-            group_schedule = []
             
             for day_table in day_tables:
                 # Получаем день недели
@@ -409,13 +405,15 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
                         
                         # Проверяем, содержит ли имя преподавателя искомую фамилию
                         if teacher_name.lower() in teacher.lower():
-                            group_schedule.append({
-                                'day': day_text,
-                                'pair_num': pair_num,
+                            # Добавляем в словарь по дням
+                            if day_text not in schedule_by_day:
+                                schedule_by_day[day_text] = []
+                            
+                            schedule_by_day[day_text].append({
+                                'group': group_name,
+                                'pair_num': int(pair_num),
                                 'subject': subject,
-                                'teacher': teacher,
-                                'cabinet': cabinet,
-                                'subgroup': '1️⃣'
+                                'cabinet': cabinet
                             })
                         
                         # Проверяем вторую подгруппу
@@ -431,44 +429,50 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
                                         second_cabinet = second_cells[1].get_text(strip=True) if len(second_cells) > 1 else "—"
                                         
                                         if teacher_name.lower() in second_teacher.lower():
-                                            group_schedule.append({
-                                                'day': day_text,
-                                                'pair_num': pair_num,
+                                            # Добавляем в словарь по дням
+                                            if day_text not in schedule_by_day:
+                                                schedule_by_day[day_text] = []
+                                            
+                                            schedule_by_day[day_text].append({
+                                                'group': group_name,
+                                                'pair_num': int(pair_num),
                                                 'subject': subject,
-                                                'teacher': second_teacher,
-                                                'cabinet': second_cabinet,
-                                                'subgroup': '2️⃣'
+                                                'cabinet': second_cabinet
                                             })
-            
-            # Если нашли пары у этого преподавателя в группе
-            if group_schedule:
-                result.append(f"\n📚 *Группа {group_name}:*")
-                
-                current_day = None
-                for item in group_schedule:
-                    if item['day'] != current_day:
-                        result.append(f"\n*{item['day']}:*")
-                        current_day = item['day']
-                    
-                    result.append(f"{item['pair_num']}) {item['subject']}")
-                    result.append(f"├ Время: `{times.get(item['pair_num'], '—')}`")
-                    result.append(f"├ Преподаватель: {item['teacher']}")
-                    result.append(f"├ Кабинет: {item['cabinet']}")
-                    if 'subgroup' in item:
-                        result.append(f"└ Подгруппа: {item['subgroup']}")
-                    else:
-                        result.append(f"└ Вся группа")
-                
-                found_count += 1
         
         except Exception as e:
             continue
     
-    if found_count == 0:
+    # Формируем результат
+    if not schedule_by_day:
         return f"❌ Преподаватель *{teacher_name}* не найден в расписании"
     
-    result.append(f"\n━━━━━━━━━━━━━━━━")
-    result.append(f"📊 *Найдено групп:* `{found_count}`")
+    result = []
+    result.append(f"🔍 *Поиск преподавателя: {teacher_name}*\n")
+    
+    # Сортируем дни и выводим
+    for day in sorted(schedule_by_day.keys()):
+        result.append(f"*{day}:*")
+        
+        # Сортируем пары по номеру
+        pairs = sorted(schedule_by_day[day], key=lambda x: x['pair_num'])
+        
+        for pair in pairs:
+            time_str = times.get(str(pair['pair_num']), '—')
+            result.append(
+                f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']} | {pair['cabinet']}"
+            )
+        
+        result.append("")  # Пустая строка между днями
+    
+    # Подсчитываем уникальные группы
+    unique_groups = set()
+    for day_pairs in schedule_by_day.values():
+        for pair in day_pairs:
+            unique_groups.add(pair['group'])
+    
+    result.append("━━━━━━━━━━━━━━━━")
+    result.append(f"📊 *Найдено групп:* `{len(unique_groups)}`")
     
     return "\n".join(result)
 

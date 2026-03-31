@@ -51,7 +51,10 @@ def main_keyboard():
             InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
             InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
         ],
-        [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
+        [
+            InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
+            InlineKeyboardButton(text="🚪 Выйти", callback_data="logout"),
+        ],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -498,7 +501,27 @@ async def show_help(callback: CallbackQuery):
         "🔹 *Выйти* - сменить аккаунт\n\n"
         "📬 *Автоматические рассылки*\n"
         "• 00:01 - расписание на день\n"
-        "• 7:00 - оценки (кроме воскресенья)",
+        "• 7:00 - оценки (кроме воскресенья)\n\n"
+        "❓ *Возникли проблемы?*\n"
+        "Обратись в поддержку: @k1laure или @avas_21",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard()
+    )
+
+@dp.callback_query(F.data == "support")
+async def show_support(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "💬 *Поддержка*\n\n"
+        "👨‍💻 *Разработчики бота:*\n"
+        "• @k1laure\n"
+        "• @avas_21\n\n"
+        "📝 *По всем вопросам:*\n"
+        "• Ошибки в работе бота\n"
+        "• Предложения по улучшению\n"
+        "• Технические проблемы\n"
+        "• Вопросы по использованию\n\n"
+        "Напиши нам напрямую в Telegram!",
         parse_mode="Markdown",
         reply_markup=main_keyboard()
     )

@@ -142,3 +142,11 @@ async def get_last_grades_message(user_id: int) -> int | None:
         ) as cursor:
             row = await cursor.fetchone()
             return row[0] if row and row[0] else None
+
+async def backup_users_to_file():
+    """Сохранить список всех пользователей в файл"""
+    users = await get_all_users()
+    with open("users_backup.txt", "w") as f:
+        for user_id in users:
+            f.write(f"{user_id}\n")
+    return len(users)

@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import aiohttp
 import os
 
-from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group, get_user_settings, update_user_settings, save_last_grades_message, get_last_grades_message
+from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group, get_user_settings, update_user_settings, save_last_grades_message, get_last_grades_message, backup_users_to_file
 from scraper import login, fetch_grades, fetch_timetable, search_teacher
 from groups import GROUPS
 
@@ -30,6 +30,7 @@ class AuthStates(StatesGroup):
     waiting_timetable_time = State()
     waiting_admin_password = State()
     waiting_teacher_name = State()
+    waiting_broadcast_message = State()
 
 def main_keyboard():
     now = datetime.now()
@@ -242,6 +243,8 @@ async def process_password(message: Message, state: FSMContext):
         
         if cookies:
             await save_cookies(message.from_user.id, cookies)
+            # Сохраняем список пользователей в файл
+            await backup_users_to_file()
             await wait_msg.edit_text("✅ Успешно! Теперь можешь пользоваться ботом.")
             # Показываем постоянную клавиатуру
             await message.answer(
@@ -389,7 +392,7 @@ async def show_admin(callback: CallbackQuery, state: FSMContext):
 async def process_admin_password(message: Message, state: FSMContext):
     await message.delete()  # Удаляем пароль из чата
     
-    if message.text == "Wa9n8d77!!":
+    if message.text == "AVASK1LAURE":
         await state.clear()
         
         # Получаем статистику
@@ -410,6 +413,7 @@ async def process_admin_password(message: Message, state: FSMContext):
         # Создаём кнопки админ-панели
         buttons = [
             [InlineKeyboardButton(text="👁️ Поиск преподавателя", callback_data="admin_search_teacher")],
+            [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
         ]
         
@@ -707,6 +711,46 @@ async def process_teacher_name(message: Message, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
 
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "📢 <b>Массовая рассылка</b>\n\n"
+        "Введи текст сообщения для рассылки всем пользователям:\n\n"
+        "⚠️ Сообщение получат ВСЕ пользователи бота (даже незарегистрированные)",
+        parse_mode="HTML"
+    )
+    await state.set_state(AuthStates.waiting_broadcast_message)
+
+@dp.message(AuthStates.waiting_broadcast_message)
+async def process_broadcast_message(message: Message, state: FSMContext):
+    broadcast_text = message.text
+    await state.clear()
+    
+    msg = await message.answer("⏳ Начинаю рассылку...")
+    
+    # Получаем всех пользователей
+    users = await get_all_users()
+    
+    success = 0
+    failed = 0
+    
+    for user_id in users:
+        try:
+            await message.bot.send_message(user_id, broadcast_text)
+            success += 1
+        except Exception as e:
+            failed += 1
+    
+    await msg.edit_text(
+        f"✅ <b>Рассылка завершена!</b>\n\n"
+        f"📊 Статистика:\n"
+        f"• Отправлено: {success}\n"
+        f"• Ошибок: {failed}\n"
+        f"• Всего пользователей: {len(users)}",
+        parse_mode="HTML"
+    )
+
 @dp.callback_query(F.data == "admin_back")
 async def admin_back(callback: CallbackQuery):
     await callback.answer()
@@ -728,6 +772,7 @@ async def admin_back(callback: CallbackQuery):
     # Создаём кнопки админ-панели
     buttons = [
         [InlineKeyboardButton(text="👁️ Поиск преподавателя", callback_data="admin_search_teacher")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
     ]
     

@@ -405,6 +405,10 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
                         
                         # Проверяем, содержит ли имя преподавателя искомую фамилию
                         if teacher_name.lower() in teacher.lower():
+                            # Пропускаем, если кабинет - прочерк
+                            if cabinet == '—':
+                                continue
+                            
                             # Добавляем в словарь по дням
                             if day_text not in schedule_by_day:
                                 schedule_by_day[day_text] = []
@@ -429,6 +433,10 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
                                         second_cabinet = second_cells[1].get_text(strip=True) if len(second_cells) > 1 else "—"
                                         
                                         if teacher_name.lower() in second_teacher.lower():
+                                            # Пропускаем, если кабинет - прочерк
+                                            if second_cabinet == '—':
+                                                continue
+                                            
                                             # Добавляем в словарь по дням
                                             if day_text not in schedule_by_day:
                                                 schedule_by_day[day_text] = []
@@ -450,15 +458,24 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
     result = []
     result.append(f"🔍 *Поиск преподавателя: {teacher_name}*\n")
     
-    # Сортируем дни: сначала по дате (число из строки типа "31 Вторник")
-    def get_day_number(day_str):
+    # Сортируем дни: учитываем переход месяца
+    def get_day_sort_key(day_str):
         # Извлекаем число из строки "31 Вторник"
         try:
-            return int(day_str.split()[0])
+            day_num = int(day_str.split()[0])
+            # Получаем текущий день
+            now = datetime.now()
+            current_day = now.day
+            
+            # Если день меньше текущего, значит это следующий месяц
+            # Добавляем 100 чтобы он был после дней текущего месяца
+            if day_num < current_day:
+                return day_num + 100
+            return day_num
         except:
             return 999  # Если не удалось извлечь, ставим в конец
     
-    sorted_days = sorted(schedule_by_day.keys(), key=get_day_number)
+    sorted_days = sorted(schedule_by_day.keys(), key=get_day_sort_key)
     
     # Выводим дни
     for day in sorted_days:
@@ -469,13 +486,7 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
         
         for pair in pairs:
             time_str = times.get(str(pair['pair_num']), '—')
-            
-            # Формируем строку, убираем кабинет если это прочерк
-            if pair['cabinet'] == '—':
-                line = f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']}"
-            else:
-                line = f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']} | {pair['cabinet']}"
-            
+            line = f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']} | {pair['cabinet']}"
             result.append(line)
         
         result.append("")  # Пустая строка между днями

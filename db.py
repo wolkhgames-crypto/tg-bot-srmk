@@ -1,147 +1,175 @@
-import aiosqlite
+import asyncpg
 import json
+import os
 
-DB = "sessions.db"
+# Connection string из переменных окружения
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_vkobaOxLN6S9@ep-fragrant-term-almpg8n6-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require")
+
+async def get_pool():
+    """Создать пул соединений с PostgreSQL"""
+    return await asyncpg.create_pool(DATABASE_URL)
 
 async def init_db():
-    async with aiosqlite.connect(DB) as db:
-        await db.execute("""
+    """Инициализация таблиц в PostgreSQL"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
-                user_id INTEGER PRIMARY KEY,
+                user_id BIGINT PRIMARY KEY,
                 cookies TEXT,
                 group_name TEXT,
                 notify_grades INTEGER DEFAULT 1,
                 notify_timetable INTEGER DEFAULT 1,
                 grades_time TEXT DEFAULT '07:00',
                 timetable_time TEXT DEFAULT '00:01',
-                last_grades_message_id INTEGER
+                last_grades_message_id BIGINT
             )
         """)
-        await db.commit()
+    await pool.close()
 
 async def save_cookies(user_id: int, cookies: dict, group_name: str = None):
-    async with aiosqlite.connect(DB) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO sessions (user_id, cookies, group_name) VALUES (?, ?, ?)",
-            (user_id, json.dumps(cookies), group_name)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO sessions (user_id, cookies, group_name) 
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) 
+            DO UPDATE SET cookies = $2, group_name = $3
+            """,
+            user_id, json.dumps(cookies), group_name
         )
-        await db.commit()
+    await pool.close()
 
 async def get_cookies(user_id: int) -> dict | None:
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute(
-            "SELECT cookies FROM sessions WHERE user_id = ?", (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return json.loads(row[0]) if row else None
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT cookies FROM sessions WHERE user_id = $1", user_id
+        )
+    await pool.close()
+    return json.loads(row['cookies']) if row else None
 
 async def get_group(user_id: int) -> str | None:
     """Получить группу пользователя"""
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute(
-            "SELECT group_name FROM sessions WHERE user_id = ?", (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else None
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT group_name FROM sessions WHERE user_id = $1", user_id
+        )
+    await pool.close()
+    return row['group_name'] if row else None
 
 async def save_group(user_id: int, group_name: str):
     """Сохранить группу пользователя"""
-    async with aiosqlite.connect(DB) as db:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         # Проверяем, есть ли пользователь в таблице
-        async with db.execute("SELECT user_id FROM sessions WHERE user_id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
+        row = await conn.fetchrow("SELECT user_id FROM sessions WHERE user_id = $1", user_id)
         
         if row:
             # Обновляем существующую запись
-            await db.execute(
-                "UPDATE sessions SET group_name = ? WHERE user_id = ?",
-                (group_name, user_id)
+            await conn.execute(
+                "UPDATE sessions SET group_name = $1 WHERE user_id = $2",
+                group_name, user_id
             )
         else:
             # Создаём новую запись с группой
-            await db.execute(
-                "INSERT INTO sessions (user_id, group_name) VALUES (?, ?)",
-                (user_id, group_name)
+            await conn.execute(
+                "INSERT INTO sessions (user_id, group_name) VALUES ($1, $2)",
+                user_id, group_name
             )
-        await db.commit()
+    await pool.close()
 
 async def delete_cookies(user_id: int):
-    async with aiosqlite.connect(DB) as db:
-        await db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-        await db.commit()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM sessions WHERE user_id = $1", user_id)
+    await pool.close()
 
 async def get_all_users() -> list[int]:
     """Получить список всех user_id с активными сессиями"""
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute("SELECT user_id FROM sessions") as cursor:
-            rows = await cursor.fetchall()
-            return [row[0] for row in rows]
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM sessions")
+    await pool.close()
+    return [row['user_id'] for row in rows]
 
 async def get_user_settings(user_id: int) -> dict:
     """Получить настройки пользователя"""
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute(
-            "SELECT notify_grades, notify_timetable, grades_time, timetable_time FROM sessions WHERE user_id = ?",
-            (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return {
-                    "notify_grades": bool(row[0]),
-                    "notify_timetable": bool(row[1]),
-                    "grades_time": row[2],
-                    "timetable_time": row[3]
-                }
-            return {
-                "notify_grades": True,
-                "notify_timetable": True,
-                "grades_time": "07:00",
-                "timetable_time": "00:01"
-            }
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT notify_grades, notify_timetable, grades_time, timetable_time FROM sessions WHERE user_id = $1",
+            user_id
+        )
+    await pool.close()
+    
+    if row:
+        return {
+            "notify_grades": bool(row['notify_grades']),
+            "notify_timetable": bool(row['notify_timetable']),
+            "grades_time": row['grades_time'],
+            "timetable_time": row['timetable_time']
+        }
+    return {
+        "notify_grades": True,
+        "notify_timetable": True,
+        "grades_time": "07:00",
+        "timetable_time": "00:01"
+    }
 
 async def update_user_settings(user_id: int, notify_grades: bool = None, notify_timetable: bool = None, 
                                grades_time: str = None, timetable_time: str = None):
     """Обновить настройки пользователя"""
-    async with aiosqlite.connect(DB) as db:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         updates = []
         params = []
+        param_num = 1
         
         if notify_grades is not None:
-            updates.append("notify_grades = ?")
+            updates.append(f"notify_grades = ${param_num}")
             params.append(1 if notify_grades else 0)
+            param_num += 1
         if notify_timetable is not None:
-            updates.append("notify_timetable = ?")
+            updates.append(f"notify_timetable = ${param_num}")
             params.append(1 if notify_timetable else 0)
+            param_num += 1
         if grades_time is not None:
-            updates.append("grades_time = ?")
+            updates.append(f"grades_time = ${param_num}")
             params.append(grades_time)
+            param_num += 1
         if timetable_time is not None:
-            updates.append("timetable_time = ?")
+            updates.append(f"timetable_time = ${param_num}")
             params.append(timetable_time)
+            param_num += 1
         
         if updates:
             params.append(user_id)
-            query = f"UPDATE sessions SET {', '.join(updates)} WHERE user_id = ?"
-            await db.execute(query, params)
-            await db.commit()
+            query = f"UPDATE sessions SET {', '.join(updates)} WHERE user_id = ${param_num}"
+            await conn.execute(query, *params)
+    await pool.close()
 
 async def save_last_grades_message(user_id: int, message_id: int):
     """Сохранить ID последнего сообщения с оценками"""
-    async with aiosqlite.connect(DB) as db:
-        await db.execute(
-            "UPDATE sessions SET last_grades_message_id = ? WHERE user_id = ?",
-            (message_id, user_id)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE sessions SET last_grades_message_id = $1 WHERE user_id = $2",
+            message_id, user_id
         )
-        await db.commit()
+    await pool.close()
 
 async def get_last_grades_message(user_id: int) -> int | None:
     """Получить ID последнего сообщения с оценками"""
-    async with aiosqlite.connect(DB) as db:
-        async with db.execute(
-            "SELECT last_grades_message_id FROM sessions WHERE user_id = ?", (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row and row[0] else None
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT last_grades_message_id FROM sessions WHERE user_id = $1", user_id
+        )
+    await pool.close()
+    return row['last_grades_message_id'] if row and row['last_grades_message_id'] else None
 
 async def backup_users_to_file():
     """Сохранить список всех пользователей в файл"""

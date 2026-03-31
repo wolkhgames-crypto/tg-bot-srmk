@@ -58,7 +58,7 @@ async def get_cookies(user_id: int) -> dict | None:
         row = await conn.fetchrow(
             "SELECT cookies FROM sessions WHERE user_id = $1", user_id
         )
-    return json.loads(row['cookies']) if row else None
+    return json.loads(row['cookies']) if row and row['cookies'] else None
 
 async def get_group(user_id: int) -> str | None:
     """Получить группу пользователя"""

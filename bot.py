@@ -30,11 +30,12 @@ class AuthStates(StatesGroup):
     waiting_timetable_time = State()
 
 def main_keyboard():
+    now = datetime.now()
     buttons = [
-        [InlineKeyboardButton(text="📅 Текущий месяц", callback_data="grades_current")],
+        [InlineKeyboardButton(text="📊 Электронный дневник", callback_data="grades_current")],
         [
-            InlineKeyboardButton(text="⬅️ Назад", callback_data="grades_prev"),
-            InlineKeyboardButton(text="➡️ Вперёд", callback_data="grades_next"),
+            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"grades_{now.year}_{now.month}_prev"),
+            InlineKeyboardButton(text="➡️ Вперёд", callback_data=f"grades_{now.year}_{now.month}_next"),
         ],
         [
             InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
@@ -64,32 +65,26 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer("❌ Бот работает только в личных сообщениях. Напиши мне в личку: @john_srmk_bot")
         return
     
-    cookies = await get_cookies(message.from_user.id)
-    if cookies:
-        await message.answer(
-            "👋 Ты уже авторизован!\nВыбери действие:",
-            reply_markup=reply_keyboard()
-        )
-        await message.answer(
-            "Или используй меню:",
-            reply_markup=main_keyboard()
-        )
-    else:
-        await message.answer(
-            "👋 Привет! Введи свой *логин* (email) от портала:",
-            parse_mode="Markdown"
-        )
-        await state.set_state(AuthStates.waiting_login)
+    await message.answer(
+        "👋 Привет! Я бот для просмотра оценок и расписания СРМК.\n\n"
+        "Выбери действие:",
+        reply_markup=reply_keyboard()
+    )
 
 # Обработчики для постоянных кнопок
 @dp.message(F.text == "📅 Оценки")
-async def btn_grades(message: Message):
-    now = datetime.now()
+async def btn_grades(message: Message, state: FSMContext):
     cookies = await get_cookies(message.from_user.id)
     if not cookies:
-        await message.answer("❌ Сессия истекла. Войди снова — /start")
+        await message.answer(
+            "Для просмотра оценок нужно авторизоваться.\n\n"
+            "Введи свой *логин* (email) от портала:",
+            parse_mode="Markdown"
+        )
+        await state.set_state(AuthStates.waiting_login)
         return
     
+    now = datetime.now()
     msg = await message.answer("⏳ Загружаю оценки...")
     result = await fetch_grades(cookies, now.year, now.month)
     
@@ -166,7 +161,7 @@ async def btn_settings(message: Message):
 async def btn_help(message: Message):
     await message.answer(
         "ℹ️ *Помощь*\n\n"
-        "🔹 *Текущий месяц* - оценки за этот месяц\n"
+        "🔹 *Электронный дневник* - оценки за текущий месяц\n"
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Расписание* - расписание занятий\n"
         "🔹 *Сменить группу* - изменить группу\n"
@@ -184,7 +179,7 @@ async def btn_help(message: Message):
 async def cmd_help(message: Message):
     await message.answer(
         "ℹ️ *Помощь*\n\n"
-        "🔹 *Текущий месяц* - оценки за этот месяц\n"
+        "🔹 *Электронный дневник* - оценки за текущий месяц\n"
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Расписание* - расписание занятий\n"
         "🔹 *Сменить группу* - изменить группу\n"
@@ -222,9 +217,11 @@ async def process_password(message: Message, state: FSMContext):
         
         if cookies:
             await save_cookies(message.from_user.id, cookies)
-            await wait_msg.edit_text(
-                "✅ Успешно! Выбери действие:",
-                reply_markup=main_keyboard()
+            await wait_msg.edit_text("✅ Успешно! Теперь можешь пользоваться ботом.")
+            # Показываем постоянную клавиатуру
+            await message.answer(
+                "Выбери действие:",
+                reply_markup=reply_keyboard()
             )
         else:
             await wait_msg.edit_text(
@@ -276,10 +273,29 @@ async def send_grades(callback: CallbackQuery, year: int, month: int):
             await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
             return
         
+        # Создаём кнопки навигации с текущим месяцем
+        buttons = [
+            [InlineKeyboardButton(text="📊 Электронный дневник", callback_data="grades_current")],
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data=f"grades_{year}_{month}_prev"),
+                InlineKeyboardButton(text="➡️ Вперёд", callback_data=f"grades_{year}_{month}_next"),
+            ],
+            [
+                InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
+                InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+            ],
+            [
+                InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
+                InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
+            ],
+            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
+            [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
+        ]
+        
         if "❌ Сервер недоступен" in result:
-            await msg.edit_text(result, reply_markup=main_keyboard())
+            await msg.edit_text(result, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         else:
-            await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+            await msg.edit_text(result, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     except Exception as e:
         await msg.edit_text(
             "❌ Произошла ошибка при загрузке оценок.\n"
@@ -292,18 +308,28 @@ async def grades_current(callback: CallbackQuery):
     now = datetime.now()
     await send_grades(callback, now.year, now.month)
 
-@dp.callback_query(F.data == "grades_prev")
+@dp.callback_query(F.data.startswith("grades_") & F.data.endswith("_prev"))
 async def grades_prev(callback: CallbackQuery):
-    now = datetime.now()
-    month = now.month - 1 or 12
-    year = now.year if now.month > 1 else now.year - 1
+    # Извлекаем год и месяц из callback_data
+    parts = callback.data.split("_")
+    year = int(parts[1])
+    month = int(parts[2])
+    
+    # Переходим на месяц назад
+    month = month - 1 if month > 1 else 12
+    year = year if month != 12 else year - 1
     await send_grades(callback, year, month)
 
-@dp.callback_query(F.data == "grades_next")
+@dp.callback_query(F.data.startswith("grades_") & F.data.endswith("_next"))
 async def grades_next(callback: CallbackQuery):
-    now = datetime.now()
-    month = now.month % 12 + 1
-    year = now.year if now.month < 12 else now.year + 1
+    # Извлекаем год и месяц из callback_data
+    parts = callback.data.split("_")
+    year = int(parts[1])
+    month = int(parts[2])
+    
+    # Переходим на месяц вперёд
+    month = month + 1 if month < 12 else 1
+    year = year if month != 1 else year + 1
     await send_grades(callback, year, month)
 
 @dp.callback_query(F.data == "stats")
@@ -389,7 +415,7 @@ async def show_help(callback: CallbackQuery):
     await callback.answer()
     await callback.message.edit_text(
         "ℹ️ *Помощь*\n\n"
-        "🔹 *Текущий месяц* - оценки за этот месяц\n"
+        "🔹 *Электронный дневник* - оценки за текущий месяц\n"
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Расписание* - расписание занятий\n"
         "🔹 *Сменить группу* - изменить группу\n"

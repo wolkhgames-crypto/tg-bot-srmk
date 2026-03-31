@@ -450,8 +450,18 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
     result = []
     result.append(f"🔍 *Поиск преподавателя: {teacher_name}*\n")
     
-    # Сортируем дни и выводим
-    for day in sorted(schedule_by_day.keys()):
+    # Сортируем дни: сначала по дате (число из строки типа "31 Вторник")
+    def get_day_number(day_str):
+        # Извлекаем число из строки "31 Вторник"
+        try:
+            return int(day_str.split()[0])
+        except:
+            return 999  # Если не удалось извлечь, ставим в конец
+    
+    sorted_days = sorted(schedule_by_day.keys(), key=get_day_number)
+    
+    # Выводим дни
+    for day in sorted_days:
         result.append(f"*{day}:*")
         
         # Сортируем пары по номеру
@@ -459,9 +469,14 @@ async def search_teacher(cookies: dict, teacher_name: str) -> str:
         
         for pair in pairs:
             time_str = times.get(str(pair['pair_num']), '—')
-            result.append(
-                f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']} | {pair['cabinet']}"
-            )
+            
+            # Формируем строку, убираем кабинет если это прочерк
+            if pair['cabinet'] == '—':
+                line = f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']}"
+            else:
+                line = f"{pair['group']} | {pair['pair_num']} пара | {time_str} | {pair['subject']} | {pair['cabinet']}"
+            
+            result.append(line)
         
         result.append("")  # Пустая строка между днями
     

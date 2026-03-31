@@ -5,9 +5,22 @@ import os
 # Connection string из переменных окружения
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_vkobaOxLN6S9@ep-fragrant-term-almpg8n6-pooler.c-3.eu-central-1.aws.neon.tech/neondb?sslmode=require")
 
+# Глобальный пул соединений
+_pool = None
+
 async def get_pool():
-    """Создать пул соединений с PostgreSQL"""
-    return await asyncpg.create_pool(DATABASE_URL)
+    """Получить или создать пул соединений"""
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    return _pool
+
+async def close_pool():
+    """Закрыть пул соединений"""
+    global _pool
+    if _pool:
+        await _pool.close()
+        _pool = None
 
 async def init_db():
     """Инициализация таблиц в PostgreSQL"""
@@ -25,7 +38,6 @@ async def init_db():
                 last_grades_message_id BIGINT
             )
         """)
-    await pool.close()
 
 async def save_cookies(user_id: int, cookies: dict, group_name: str = None):
     pool = await get_pool()
@@ -39,7 +51,6 @@ async def save_cookies(user_id: int, cookies: dict, group_name: str = None):
             """,
             user_id, json.dumps(cookies), group_name
         )
-    await pool.close()
 
 async def get_cookies(user_id: int) -> dict | None:
     pool = await get_pool()
@@ -47,7 +58,6 @@ async def get_cookies(user_id: int) -> dict | None:
         row = await conn.fetchrow(
             "SELECT cookies FROM sessions WHERE user_id = $1", user_id
         )
-    await pool.close()
     return json.loads(row['cookies']) if row else None
 
 async def get_group(user_id: int) -> str | None:
@@ -57,7 +67,6 @@ async def get_group(user_id: int) -> str | None:
         row = await conn.fetchrow(
             "SELECT group_name FROM sessions WHERE user_id = $1", user_id
         )
-    await pool.close()
     return row['group_name'] if row else None
 
 async def save_group(user_id: int, group_name: str):
@@ -79,20 +88,17 @@ async def save_group(user_id: int, group_name: str):
                 "INSERT INTO sessions (user_id, group_name) VALUES ($1, $2)",
                 user_id, group_name
             )
-    await pool.close()
 
 async def delete_cookies(user_id: int):
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM sessions WHERE user_id = $1", user_id)
-    await pool.close()
 
 async def get_all_users() -> list[int]:
     """Получить список всех user_id с активными сессиями"""
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT user_id FROM sessions")
-    await pool.close()
     return [row['user_id'] for row in rows]
 
 async def get_user_settings(user_id: int) -> dict:
@@ -103,7 +109,6 @@ async def get_user_settings(user_id: int) -> dict:
             "SELECT notify_grades, notify_timetable, grades_time, timetable_time FROM sessions WHERE user_id = $1",
             user_id
         )
-    await pool.close()
     
     if row:
         return {
@@ -149,7 +154,6 @@ async def update_user_settings(user_id: int, notify_grades: bool = None, notify_
             params.append(user_id)
             query = f"UPDATE sessions SET {', '.join(updates)} WHERE user_id = ${param_num}"
             await conn.execute(query, *params)
-    await pool.close()
 
 async def save_last_grades_message(user_id: int, message_id: int):
     """Сохранить ID последнего сообщения с оценками"""
@@ -159,7 +163,6 @@ async def save_last_grades_message(user_id: int, message_id: int):
             "UPDATE sessions SET last_grades_message_id = $1 WHERE user_id = $2",
             message_id, user_id
         )
-    await pool.close()
 
 async def get_last_grades_message(user_id: int) -> int | None:
     """Получить ID последнего сообщения с оценками"""
@@ -168,7 +171,6 @@ async def get_last_grades_message(user_id: int) -> int | None:
         row = await conn.fetchrow(
             "SELECT last_grades_message_id FROM sessions WHERE user_id = $1", user_id
         )
-    await pool.close()
     return row['last_grades_message_id'] if row and row['last_grades_message_id'] else None
 
 async def backup_users_to_file():

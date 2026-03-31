@@ -47,10 +47,22 @@ async def get_group(user_id: int) -> str | None:
 async def save_group(user_id: int, group_name: str):
     """Сохранить группу пользователя"""
     async with aiosqlite.connect(DB) as db:
-        await db.execute(
-            "UPDATE sessions SET group_name = ? WHERE user_id = ?",
-            (group_name, user_id)
-        )
+        # Проверяем, есть ли пользователь в таблице
+        async with db.execute("SELECT user_id FROM sessions WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+        
+        if row:
+            # Обновляем существующую запись
+            await db.execute(
+                "UPDATE sessions SET group_name = ? WHERE user_id = ?",
+                (group_name, user_id)
+            )
+        else:
+            # Создаём новую запись с группой
+            await db.execute(
+                "INSERT INTO sessions (user_id, group_name) VALUES (?, ?)",
+                (user_id, group_name)
+            )
         await db.commit()
 
 async def delete_cookies(user_id: int):

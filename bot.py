@@ -48,7 +48,7 @@ def main_keyboard():
             InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
         ],
         [
-            InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help"),
+            InlineKeyboardButton(text="ℹ️ Функции", callback_data="help"),
             InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
         ],
         [
@@ -62,7 +62,7 @@ def reply_keyboard():
     """Постоянная клавиатура внизу экрана"""
     buttons = [
         [KeyboardButton(text="📅 Оценки"), KeyboardButton(text="📋 Расписание")],
-        [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="ℹ️ Помощь")],
+        [KeyboardButton(text="⚙️ Настройки"), KeyboardButton(text="ℹ️ Функции")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -182,7 +182,7 @@ async def btn_settings(message: Message):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
 
-@dp.message(F.text == "ℹ️ Помощь")
+@dp.message(F.text == "ℹ️ Функции")
 async def btn_help(message: Message):
     await message.answer(
         "ℹ️ *Помощь*\n\n"
@@ -491,7 +491,7 @@ async def show_timetable(callback: CallbackQuery, state: FSMContext):
 async def show_help(callback: CallbackQuery):
     await callback.answer()
     await callback.message.edit_text(
-        "ℹ️ *Помощь*\n\n"
+        "ℹ️ *Функции бота*\n\n"
         "🔹 *Электронный дневник* - оценки за текущий месяц\n"
         "🔹 *Назад/Вперёд* - навигация по месяцам\n"
         "🔹 *Расписание* - расписание занятий\n"

@@ -316,14 +316,20 @@ async def send_grades(callback: CallbackQuery, year: int, month: int):
             ],
             [
                 InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),
-                InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
+                InlineKeyboardButton(text="👁️ Поиск преподавателя", callback_data="search_teacher"),
             ],
             [
                 InlineKeyboardButton(text="🔄 Сменить группу", callback_data="change_group"),
                 InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
             ],
-            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")],
-            [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
+            [
+                InlineKeyboardButton(text="ℹ️ Функции", callback_data="help"),
+                InlineKeyboardButton(text="🔐 Admin", callback_data="admin"),
+            ],
+            [
+                InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
+                InlineKeyboardButton(text="🚪 Выйти", callback_data="logout"),
+            ],
         ]
         
         if "❌ Сервер недоступен" in result:

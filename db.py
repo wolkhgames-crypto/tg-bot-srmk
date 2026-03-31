@@ -13,7 +13,8 @@ async def init_db():
                 notify_grades INTEGER DEFAULT 1,
                 notify_timetable INTEGER DEFAULT 1,
                 grades_time TEXT DEFAULT '07:00',
-                timetable_time TEXT DEFAULT '00:01'
+                timetable_time TEXT DEFAULT '00:01',
+                last_grades_message_id INTEGER
             )
         """)
         await db.commit()
@@ -111,3 +112,21 @@ async def update_user_settings(user_id: int, notify_grades: bool = None, notify_
             query = f"UPDATE sessions SET {', '.join(updates)} WHERE user_id = ?"
             await db.execute(query, params)
             await db.commit()
+
+async def save_last_grades_message(user_id: int, message_id: int):
+    """Сохранить ID последнего сообщения с оценками"""
+    async with aiosqlite.connect(DB) as db:
+        await db.execute(
+            "UPDATE sessions SET last_grades_message_id = ? WHERE user_id = ?",
+            (message_id, user_id)
+        )
+        await db.commit()
+
+async def get_last_grades_message(user_id: int) -> int | None:
+    """Получить ID последнего сообщения с оценками"""
+    async with aiosqlite.connect(DB) as db:
+        async with db.execute(
+            "SELECT last_grades_message_id FROM sessions WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row and row[0] else None

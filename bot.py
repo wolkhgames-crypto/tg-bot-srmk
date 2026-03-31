@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import aiohttp
 import os
 
-from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group, get_user_settings, update_user_settings
+from db import init_db, save_cookies, get_cookies, delete_cookies, get_all_users, get_group, save_group, get_user_settings, update_user_settings, save_last_grades_message, get_last_grades_message
 from scraper import login, fetch_grades, fetch_timetable
 from groups import GROUPS
 
@@ -84,6 +84,14 @@ async def btn_grades(message: Message, state: FSMContext):
         await state.set_state(AuthStates.waiting_login)
         return
     
+    # Удаляем предыдущее сообщение с оценками
+    last_msg_id = await get_last_grades_message(message.from_user.id)
+    if last_msg_id:
+        try:
+            await message.bot.delete_message(message.chat.id, last_msg_id)
+        except:
+            pass  # Сообщение уже удалено или недоступно
+    
     now = datetime.now()
     msg = await message.answer("⏳ Загружаю оценки...")
     result = await fetch_grades(cookies, now.year, now.month)
@@ -93,7 +101,9 @@ async def btn_grades(message: Message, state: FSMContext):
         await msg.edit_text("🔒 Сессия истекла, нужно войти снова — /start")
         return
     
-    await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+    new_msg = await msg.edit_text(result, parse_mode="Markdown", reply_markup=main_keyboard())
+    # Сохраняем ID нового сообщения
+    await save_last_grades_message(message.from_user.id, new_msg.message_id)
 
 @dp.message(F.text == "📋 Расписание")
 async def btn_timetable(message: Message, state: FSMContext):
@@ -257,7 +267,16 @@ async def process_group(message: Message, state: FSMContext):
 
 async def send_grades(callback: CallbackQuery, year: int, month: int):
     await callback.answer()
-    msg = await callback.message.edit_text("⏳ Загружаю оценки...")
+    
+    # Удаляем предыдущее сообщение с оценками
+    last_msg_id = await get_last_grades_message(callback.from_user.id)
+    if last_msg_id:
+        try:
+            await callback.bot.delete_message(callback.message.chat.id, last_msg_id)
+        except:
+            pass  # Сообщение уже удалено или недоступно
+    
+    msg = await callback.message.answer("⏳ Загружаю оценки...")
     
     try:
         cookies = await get_cookies(callback.from_user.id)
@@ -293,9 +312,12 @@ async def send_grades(callback: CallbackQuery, year: int, month: int):
         ]
         
         if "❌ Сервер недоступен" in result:
-            await msg.edit_text(result, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            new_msg = await msg.edit_text(result, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         else:
-            await msg.edit_text(result, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            new_msg = await msg.edit_text(result, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        
+        # Сохраняем ID нового сообщения
+        await save_last_grades_message(callback.from_user.id, new_msg.message_id)
     except Exception as e:
         await msg.edit_text(
             "❌ Произошла ошибка при загрузке оценок.\n"
@@ -601,13 +623,23 @@ async def scheduler(bot: Bot):
                     cookies = await get_cookies(user_id)
                     
                     if cookies:
+                        # Удаляем предыдущее сообщение с оценками
+                        last_msg_id = await get_last_grades_message(user_id)
+                        if last_msg_id:
+                            try:
+                                await bot.delete_message(user_id, last_msg_id)
+                            except:
+                                pass  # Сообщение уже удалено или недоступно
+                        
                         result = await fetch_grades(cookies, now.year, now.month)
                         if result and "❌" not in result:
-                            await bot.send_message(
+                            msg = await bot.send_message(
                                 user_id,
                                 f"📅 *Ежедневная сводка оценок*\n\n{result}",
                                 parse_mode="Markdown"
                             )
+                            # Сохраняем ID нового сообщения
+                            await save_last_grades_message(user_id, msg.message_id)
             except Exception as e:
                 logging.error(f"Ошибка рассылки пользователю {user_id}: {e}")
         

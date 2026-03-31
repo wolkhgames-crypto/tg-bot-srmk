@@ -38,8 +38,8 @@ def main_keyboard():
     buttons = [
         [InlineKeyboardButton(text="📊 Электронный дневник", callback_data="grades_current")],
         [
-            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"grades_{now.year}_{now.month}_prev"),
-            InlineKeyboardButton(text="➡️ Вперёд", callback_data=f"grades_{now.year}_{now.month}_next"),
+            InlineKeyboardButton(text="◀️ Предыдущий месяц", callback_data=f"grades_{now.year}_{now.month}_prev"),
+            InlineKeyboardButton(text="Следующий месяц ▶️", callback_data=f"grades_{now.year}_{now.month}_next"),
         ],
         [
             InlineKeyboardButton(text="📋 Расписание", callback_data="timetable"),

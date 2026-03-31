@@ -23,6 +23,7 @@ load_dotenv()
 dp = Dispatcher(storage=MemoryStorage())
 
 class AuthStates(StatesGroup):
+    waiting_privacy_accept = State()
     waiting_login = State()
     waiting_password = State()
     waiting_group = State()
@@ -54,8 +55,9 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton(text="💬 Поддержка", callback_data="support"),
-            InlineKeyboardButton(text="🚪 Выйти", callback_data="logout"),
+            InlineKeyboardButton(text="🔒 Конфиденциальность", callback_data="privacy"),
         ],
+        [InlineKeyboardButton(text="🚪 Выйти", callback_data="logout")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -77,19 +79,95 @@ async def cmd_start(message: Message, state: FSMContext):
     # Проверяем, авторизован ли пользователь
     cookies = await get_cookies(message.from_user.id)
     if not cookies:
+        # Показываем политику конфиденциальности
+        buttons = [
+            [InlineKeyboardButton(text="✅ Согласен", callback_data="accept_privacy")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="decline_privacy")]
+        ]
+        
         await message.answer(
-            "👋 Привет! Я бот для просмотра оценок и расписания СРМК.\n\n"
-            "Для начала работы нужно авторизоваться.\n\n"
-            "Введи свой *логин от электронного дневника*:",
-            parse_mode="Markdown"
+            "🔒 <b>Политика конфиденциальности</b>\n\n"
+            "Используя бота, ты соглашаешься с условиями обработки данных.\n\n"
+            "<b>📋 Какие данные мы собираем:</b>\n"
+            "• Telegram ID (для идентификации)\n"
+            "• Логин и пароль от электронного дневника (только для авторизации)\n"
+            "• Номер группы\n"
+            "• Настройки уведомлений\n\n"
+            "<b>🔐 Как мы храним данные:</b>\n"
+            "• Пароли НЕ сохраняются\n"
+            "• Сохраняются только cookies сессии (зашифрованные токены доступа)\n"
+            "• Данные хранятся в защищенной базе данных (PostgreSQL)\n"
+            "• Доступ к БД имеют только разработчики\n\n"
+            "<b>⚙️ Как мы используем данные:</b>\n"
+            "• Только для доступа к твоим оценкам и расписанию\n"
+            "• Для отправки уведомлений (если включены)\n"
+            "• Данные НЕ передаются третьим лицам\n"
+            "• Данные НЕ используются в коммерческих целях\n\n"
+            "<b>🗑️ Удаление данных:</b>\n"
+            "• Нажми \"🚪 Выйти\" - все данные будут удалены\n"
+            "• Или напиши в поддержку: @k1laure @avas_21\n\n"
+            "👨‍💻 Разработчики: П-21\n"
+            "@k1laure @avas_21\n\n"
+            "Последнее обновление: 31.03.2026",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
-        await state.set_state(AuthStates.waiting_login)
+        await state.set_state(AuthStates.waiting_privacy_accept)
         return
     
     await message.answer(
         "👋 Привет! Ты уже авторизован.\n\n"
         "Выбери действие:",
         reply_markup=reply_keyboard()
+    )
+
+@dp.callback_query(F.data == "accept_privacy")
+async def accept_privacy(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "👋 Спасибо! Теперь нужно авторизоваться.\n\n"
+        "Введи свой логин от электронного дневника:",
+    )
+    await state.set_state(AuthStates.waiting_login)
+
+@dp.callback_query(F.data == "decline_privacy")
+async def decline_privacy(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "❌ Без согласия с политикой конфиденциальности бот не может работать.\n\n"
+        "Если передумаешь - напиши /start"
+    )
+    await state.clear()
+
+@dp.callback_query(F.data == "privacy")
+async def show_privacy(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "🔒 <b>Политика конфиденциальности</b>\n\n"
+        "Используя бота, ты соглашаешься с условиями обработки данных.\n\n"
+        "<b>📋 Какие данные мы собираем:</b>\n"
+        "• Telegram ID (для идентификации)\n"
+        "• Логин и пароль от электронного дневника (только для авторизации)\n"
+        "• Номер группы\n"
+        "• Настройки уведомлений\n\n"
+        "<b>🔐 Как мы храним данные:</b>\n"
+        "• Пароли НЕ сохраняются\n"
+        "• Сохраняются только cookies сессии (зашифрованные токены доступа)\n"
+        "• Данные хранятся в защищенной базе данных (PostgreSQL)\n"
+        "• Доступ к БД имеют только разработчики\n\n"
+        "<b>⚙️ Как мы используем данные:</b>\n"
+        "• Только для доступа к твоим оценкам и расписанию\n"
+        "• Для отправки уведомлений (если включены)\n"
+        "• Данные НЕ передаются третьим лицам\n"
+        "• Данные НЕ используются в коммерческих целях\n\n"
+        "<b>🗑️ Удаление данных:</b>\n"
+        "• Нажми \"🚪 Выйти\" - все данные будут удалены\n"
+        "• Или напиши в поддержку: @k1laure @avas_21\n\n"
+        "👨‍💻 Разработчики: П-21\n"
+        "@k1laure @avas_21\n\n"
+        "Последнее обновление: 31.03.2026",
+        parse_mode="HTML",
+        reply_markup=main_keyboard()
     )
 
 # Обработчики для постоянных кнопок
